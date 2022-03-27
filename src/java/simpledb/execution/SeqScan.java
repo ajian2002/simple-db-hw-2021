@@ -1,15 +1,15 @@
 package simpledb.execution;
 
 import simpledb.common.Database;
-import simpledb.transaction.TransactionAbortedException;
-import simpledb.transaction.TransactionId;
-import simpledb.common.Type;
 import simpledb.common.DbException;
+import simpledb.storage.DbFile;
 import simpledb.storage.DbFileIterator;
 import simpledb.storage.Tuple;
 import simpledb.storage.TupleDesc;
+import simpledb.transaction.TransactionAbortedException;
+import simpledb.transaction.TransactionId;
 
-import java.util.*;
+import java.util.NoSuchElementException;
 
 /**
  * SeqScan is an implementation of a sequential scan access method that reads
@@ -19,6 +19,14 @@ import java.util.*;
 public class SeqScan implements OpIterator {
 
     private static final long serialVersionUID = 1L;
+
+    private boolean open = false;
+    private String tableAlias;
+    private TransactionId tid;
+    private int tableid;
+
+    private DbFile f;
+    private DbFileIterator tablefileIterator;
 
     /**
      * Creates a sequential scan over the specified table as a part of the
@@ -38,6 +46,11 @@ public class SeqScan implements OpIterator {
      */
     public SeqScan(TransactionId tid, int tableid, String tableAlias) {
         // some code goes here
+        this.tableAlias = tableAlias;
+        this.tableid = tableid;
+        this.tid = tid;
+        this.f = Database.getCatalog().getDatabaseFile(tableid);
+        this.open=false;
     }
 
     /**
@@ -46,7 +59,7 @@ public class SeqScan implements OpIterator {
      *       be the actual name of the table in the catalog of the database
      * */
     public String getTableName() {
-        return null;
+        return Database.getCatalog().getTableName(tableid);
     }
 
     /**
@@ -55,7 +68,7 @@ public class SeqScan implements OpIterator {
     public String getAlias()
     {
         // some code goes here
-        return null;
+        return tableAlias;
     }
 
     /**
@@ -72,6 +85,11 @@ public class SeqScan implements OpIterator {
      */
     public void reset(int tableid, String tableAlias) {
         // some code goes here
+        this.tableAlias = tableAlias;
+        this.tableid = tableid;
+        this.f = Database.getCatalog().getDatabaseFile(tableid);
+        this.open = false;
+        this.tablefileIterator = null;
     }
 
     public SeqScan(TransactionId tid, int tableId) {
@@ -79,7 +97,11 @@ public class SeqScan implements OpIterator {
     }
 
     public void open() throws DbException, TransactionAbortedException {
+        if (open) throw new IllegalStateException("Scan has open");
         // some code goes here
+        tablefileIterator = f.iterator(tid);
+        tablefileIterator.open();
+        open = true;
     }
 
     /**
@@ -93,27 +115,44 @@ public class SeqScan implements OpIterator {
      *         prefixed with the tableAlias string from the constructor.
      */
     public TupleDesc getTupleDesc() {
+        //        if (!open) throw new IllegalStateException("Scan not open");
         // some code goes here
-        return null;
+        var td = f.getTupleDesc();
+        var types = td.getTypes();
+        var names = td.getNames();
+        for (int i = 0; i < names.size(); i++)
+        {
+            names.set(i, tableAlias + "." + names.get(i));
+        }
+        return new TupleDesc(types, names);
+        //        return tableAlias+".;
+
     }
 
     public boolean hasNext() throws TransactionAbortedException, DbException {
+        if (!open) throw new IllegalStateException("Scan not open");
         // some code goes here
-        return false;
+        return tablefileIterator.hasNext();
     }
 
-    public Tuple next() throws NoSuchElementException,
-            TransactionAbortedException, DbException {
+    public Tuple next() throws NoSuchElementException, TransactionAbortedException, DbException {
+        if (!open) throw new IllegalStateException("Scan not open");
         // some code goes here
-        return null;
+        return tablefileIterator.next();
     }
 
     public void close() {
+        if (!open) throw new IllegalStateException("Scan not open");
         // some code goes here
+        open = false;
+        tablefileIterator.close();
     }
 
-    public void rewind() throws DbException, NoSuchElementException,
-            TransactionAbortedException {
+    public void rewind() throws DbException, NoSuchElementException, TransactionAbortedException {
+        if (!open) throw new IllegalStateException("Scan not open");
         // some code goes here
+        //        tablefileIterator = f.iterator(tid);
+        //        tablefileIterator.open();
+        tablefileIterator.rewind();
     }
 }

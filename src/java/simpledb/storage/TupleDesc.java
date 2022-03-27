@@ -15,7 +15,11 @@ public class TupleDesc implements Serializable {
 
     private ArrayList<TDItem> list = new ArrayList<TDItem>();
 
-    private ArrayList<Type> getTypes() {
+    public TupleDesc(ArrayList<Type> types, ArrayList<String> names) {
+        this(types.toArray(new Type[0]), names.toArray(new String[0]));
+    }
+
+    public ArrayList<Type> getTypes() {
         ArrayList<Type> types = new ArrayList<>();
         for (TDItem item : list)
         {
@@ -24,7 +28,7 @@ public class TupleDesc implements Serializable {
         return types;
     }
 
-    private ArrayList<String> getNames() {
+    public ArrayList<String> getNames() {
         ArrayList<String> names = new ArrayList<>();
         for (TDItem item : list)
         {

@@ -90,15 +90,28 @@ public class HeapFile implements DbFile {
 
     // see DbFile.java for javadocs
     public Page readPage(PageId pid) {
+
+
         int id = pid.getTableId();
         int pagenum = pid.getPageNumber();
+        if (pagenum >= numPages()) return null;
+
+        //        var p=pool.getPage(, pid, Permissions.READ_ONLY);
+
+
         try
         {
+            byte[] bytes = new byte[BufferPool.getPageSize()];
+            HeapPage page;
+            //            int off = 0;
             int off = pagenum * BufferPool.getPageSize();
             raf.seek(off);
-            byte[] bytes = new byte[BufferPool.getPageSize()];
-            raf.read(bytes, off, BufferPool.getPageSize());
-            var page = new HeapPage(new HeapPageId(id, pagenum), bytes);
+            var result = raf.read(bytes);
+            if (result != -1)
+            {
+                page = new HeapPage(new HeapPageId(id, pagenum), bytes);
+            }
+            else page = null;
             //            pool.
             return page;
         } catch (IOException e)
@@ -167,9 +180,20 @@ public class HeapFile implements DbFile {
                     updateIt(currentPage);
                     if (it == null) return null;
                 }
-                if (it.hasNext()) return it.next();
+                if (it.hasNext())
+                {
+                    var td = it.next();
+                    //                    try
+                    //                    {
+                    //                        Database.getBufferPool().insertTuple(tid, getId(), td);
+                    //                    } catch (IOException e)
+                    //                    {
+                    //                        e.printStackTrace();
+                    //                    }
+                    return td;
+                }
                 currentPage++;
-                it = null;
+                updateIt(currentPage);
                 return readNext();
             }
 
@@ -192,11 +216,14 @@ public class HeapFile implements DbFile {
 
             private void updateIt(int currentPage) throws DbException, TransactionAbortedException {
                 if (!open) return;
-                if (currentPage >= pages) return;
+                if (currentPage >= pages)
+                {
+                    it = null;
+                    return;
+                }
                 PageId pid = new HeapPageId(getId(), currentPage);
                 //                HeapPage p = (HeapPage) Database.getBufferPool().getPage(tid, pid, Permissions.READ_ONLY);
                 HeapPage p = (HeapPage) pool.getPage(tid, pid, Permissions.READ_ONLY);
-                if (p == null) p = (HeapPage) readPage(pid);
                 if (p != null) it = p.iterator();
                 else it = null;
             }

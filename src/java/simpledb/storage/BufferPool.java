@@ -1,12 +1,13 @@
 package simpledb.storage;
 
+import simpledb.common.Database;
 import simpledb.common.DbException;
 import simpledb.common.Permissions;
 import simpledb.transaction.TransactionAbortedException;
 import simpledb.transaction.TransactionId;
 
 import java.io.IOException;
-import java.util.ArrayList;
+import java.util.HashSet;
 
 /**
  * BufferPool manages the reading and writing of pages into memory from
@@ -20,7 +21,7 @@ import java.util.ArrayList;
  * @Threadsafe, all fields are final
  */
 public class BufferPool {
-    private ArrayList<Page> pages;
+    private HashSet<Page> pages;
     /**
      * Bytes per page, including header.
      */
@@ -40,7 +41,7 @@ public class BufferPool {
      */
     public BufferPool(int numPages) {
         // some code goes here
-        pages = new ArrayList<Page>(numPages);
+        pages = new HashSet<>(numPages);
     }
     
     public static int getPageSize() {
@@ -77,13 +78,21 @@ public class BufferPool {
         // some code goes here
         for (Page page : pages)
         {
-            if (page.getId() == pid)
+            if (page.getId().equals(pid))
             {
                 return page;
             }
         }
+        var f = Database.getCatalog().getDatabaseFile(pid.getTableId());
+        try
+        {
+            var p = f.readPage(pid);
+            if (p != null) pages.add(p);
+            return p;
+        } catch (IndexOutOfBoundsException e)
+        {
         return null;
-        //        return null;
+        }
     }
 
     /**
