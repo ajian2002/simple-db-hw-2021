@@ -16,8 +16,7 @@ public class Join extends Operator {
     private OpIterator child1, child2;
     private static final long serialVersionUID = 1L;
 
-    //    private ArrayList list1, list2;
-    //    private int index1, index2;
+    //back为了处理child1是否回退
     private boolean back = false;
     private Tuple c1, c2;
 
