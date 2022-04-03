@@ -29,14 +29,12 @@ public class Join extends Operator {
      * @param child2 Iterator for the right(inner) relation to join
      */
     public Join(JoinPredicate p, OpIterator child1, OpIterator child2) {
-        // some code goes here
         this.p = p;
         this.child1 = child1;
         this.child2 = child2;
     }
 
     public JoinPredicate getJoinPredicate() {
-        // some code goes here
         return p;
     }
 
@@ -45,7 +43,6 @@ public class Join extends Operator {
      * alias or table name.
      */
     public String getJoinField1Name() {
-        // some code goes here
         return child1.getTupleDesc().getFieldName(p.getField1());
     }
 
@@ -54,7 +51,6 @@ public class Join extends Operator {
      * alias or table name.
      */
     public String getJoinField2Name() {
-        // some code goes here
         return child2.getTupleDesc().getFieldName(p.getField2());
     }
 
@@ -63,7 +59,6 @@ public class Join extends Operator {
      * implementation logic.
      */
     public TupleDesc getTupleDesc() {
-        // some code goes here
         return TupleDesc.merge(child1.getTupleDesc(), child2.getTupleDesc());
     }
 
@@ -71,13 +66,9 @@ public class Join extends Operator {
         super.open();
         child1.open();
         child2.open();
-        //        index1 = index2 = 0;
-
-        // some code goes here
     }
 
     public void close() {
-        // some code goes here
         super.close();
         child1.close();
         child2.close();
@@ -85,7 +76,6 @@ public class Join extends Operator {
     }
 
     public void rewind() throws DbException, TransactionAbortedException {
-        // some code goes here
         child1.rewind();
         child2.rewind();
     }
@@ -109,52 +99,50 @@ public class Join extends Operator {
      * @see JoinPredicate#filter
      */
     protected Tuple fetchNext() throws TransactionAbortedException, DbException {
-        // some code goes here
-
-        while (child1.hasNext())
+        if (c1 == null)
         {
-            if (!back)
+            if (child1.hasNext())
             {
                 c1 = child1.next();
+                child2.rewind();
+                c2 = null;
             }
-            back = false;
-            while (child2.hasNext())
-            {
-                c2 = child2.next();
-                if (p.filter(c1, c2))
-                {
-                    var t = getTupleDesc();
-                    var p = new Tuple(t);
-                    var c1i = c1.fields();
-                    var c2i = c2.fields();
-                    int number = 0;
-                    while (c1i.hasNext())
-                    {
-                        p.setField(number++, c1i.next());
-                    }
-                    while (c2i.hasNext())
-                    {
-                        p.setField(number++, c2i.next());
-                    }
-                    back = true;
-                    return p;
-                }
-
-            }
-            child2.rewind();
+            if (c1 == null) return null;
         }
-        return null;
+        while (child2.hasNext())
+        {
+            c2 = child2.next();
+            if (p.filter(c1, c2))
+            {
+                var t = getTupleDesc();
+                var p = new Tuple(t);
+                var c1i = c1.fields();
+                var c2i = c2.fields();
+                int number = 0;
+                while (c1i.hasNext())
+                {
+                    p.setField(number++, c1i.next());
+                }
+                while (c2i.hasNext())
+                {
+                    p.setField(number++, c2i.next());
+                }
+                return p;
+            }
+        }
+        c1 = null;
+        child2.rewind();
+
+        return fetchNext();
     }
 
     @Override
     public OpIterator[] getChildren() {
-        // some code goes here
         return new OpIterator[]{child1, child2};
     }
 
     @Override
     public void setChildren(OpIterator[] children) {
-        // some code goes here
         child1 = children[0];
         child2 = children[1];
     }
