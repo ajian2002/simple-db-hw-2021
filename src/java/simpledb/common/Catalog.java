@@ -109,11 +109,6 @@ public class Catalog {
      * @throws NoSuchElementException if the table doesn't exist
      */
     public TupleDesc getTupleDesc(int tableid) throws NoSuchElementException {
-        // some code goes here
-        //        for (DbFile file : files)
-        //        {
-        //            if (file.getId() == tableid) return file.getTupleDesc();
-        //        }
         var file = getDatabaseFile(tableid);
         return file.getTupleDesc();
     }

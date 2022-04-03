@@ -25,11 +25,9 @@ import java.util.List;
  * @see HeapPage#HeapPage
  */
 public class HeapFile implements DbFile {
-    private BufferPool pool;
     private File file;
     private TupleDesc td;
     private RandomAccessFile raf;
-    private ArrayList<HeapPage> pages;
 
     /**
      * Constructs a heap file backed by the specified file.
@@ -38,12 +36,8 @@ public class HeapFile implements DbFile {
      *          file.
      */
     public HeapFile(File f, TupleDesc td) {
-        // some code goes here
         this.file = f;
         this.td = td;
-        //        this.it = new
-        this.pool = Database.getBufferPool();
-
         try
         {
             this.raf = new RandomAccessFile(file, "rw");
@@ -51,7 +45,6 @@ public class HeapFile implements DbFile {
         {
             e.printStackTrace();
         }
-
     }
 
     /**
@@ -60,7 +53,6 @@ public class HeapFile implements DbFile {
      * @return the File backing this HeapFile on disk.
      */
     public File getFile() {
-        // some code goes here
         return file;
     }
 
@@ -74,7 +66,6 @@ public class HeapFile implements DbFile {
      * @return an ID uniquely identifying this HeapFile.
      */
     public int getId() {
-        // some code goes here
         return file.getAbsolutePath().hashCode();
     }
 
@@ -84,21 +75,14 @@ public class HeapFile implements DbFile {
      * @return TupleDesc of this DbFile.
      */
     public TupleDesc getTupleDesc() {
-        // some code goes here
         return td;
     }
 
     // see DbFile.java for javadocs
     public Page readPage(PageId pid) {
-
-
         int id = pid.getTableId();
         int pagenum = pid.getPageNumber();
         if (pagenum >= numPages()) return null;
-
-        //        var p=pool.getPage(, pid, Permissions.READ_ONLY);
-
-
         try
         {
             byte[] bytes = new byte[BufferPool.getPageSize()];
@@ -112,7 +96,6 @@ public class HeapFile implements DbFile {
                 page = new HeapPage(new HeapPageId(id, pagenum), bytes);
             }
             else page = null;
-            //            pool.
             return page;
         } catch (IOException e)
         {
@@ -124,14 +107,15 @@ public class HeapFile implements DbFile {
     // see DbFile.java for javadocs
     public void writePage(Page page) throws IOException {
         // some code goes here
-        // not necessary for lab1
+        if (page == null) return;
+        raf.seek((long) page.getId().getPageNumber() * BufferPool.getPageSize());
+        raf.write(page.getPageData());
     }
 
     /**
      * Returns the number of pages in this HeapFile.
      */
     public int numPages() {
-        // some code goes here
         int number = 0;
         try
         {
@@ -146,20 +130,40 @@ public class HeapFile implements DbFile {
     // see DbFile.java for javadocs
     public List<Page> insertTuple(TransactionId tid, Tuple t) throws DbException, IOException, TransactionAbortedException {
         // some code goes here
-        return null;
-        // not necessary for lab1
+        for (int i = 0; i < numPages(); i++)
+        {
+            try
+            {
+                var page = Database.getBufferPool().getPage(tid, new HeapPageId(getId(), i), Permissions.READ_WRITE);
+                ((HeapPage) page).insertTuple(t);
+                return new ArrayList<>(List.of(page));
+            } catch (Exception ignored)
+            {
+                continue;
+            }
+        }
+        writePage(new HeapPage(new HeapPageId(getId(), numPages()), new byte[BufferPool.getPageSize()]));
+        return insertTuple(tid, t);
     }
 
     // see DbFile.java for javadocs
     public ArrayList<Page> deleteTuple(TransactionId tid, Tuple t) throws DbException, TransactionAbortedException {
         // some code goes here
-        return null;
-        // not necessary for lab1
+        try
+        {
+            var page = Database.getBufferPool().getPage(tid, t.getRecordId().getPageId(), Permissions.READ_WRITE);
+            ((HeapPage) page).deleteTuple(t);
+            //            Database.getBufferPool().deleteTuple(tid, t);
+            return new ArrayList<>(List.of(page));
+        } catch (DbException e)
+        {
+            e.printStackTrace();
+            throw new DbException("Tuple not found");
+        }
     }
 
     // see DbFile.java for javadocs
     public DbFileIterator iterator(TransactionId tid) {
-        // some code goes here
         return new AbstractDbFileIterator() {
             boolean open = false;
             int pages;
@@ -182,15 +186,7 @@ public class HeapFile implements DbFile {
                 }
                 if (it.hasNext())
                 {
-                    var td = it.next();
-                    //                    try
-                    //                    {
-                    //                        Database.getBufferPool().insertTuple(tid, getId(), td);
-                    //                    } catch (IOException e)
-                    //                    {
-                    //                        e.printStackTrace();
-                    //                    }
-                    return td;
+                    return it.next();
                 }
                 currentPage++;
                 updateIt(currentPage);
@@ -203,7 +199,6 @@ public class HeapFile implements DbFile {
                 pages = numPages();
                 currentPage = 0;
                 open = true;
-                //                updateIt(currentPage);
             }
 
             @Override
@@ -222,8 +217,7 @@ public class HeapFile implements DbFile {
                     return;
                 }
                 PageId pid = new HeapPageId(getId(), currentPage);
-                //                HeapPage p = (HeapPage) Database.getBufferPool().getPage(tid, pid, Permissions.READ_ONLY);
-                HeapPage p = (HeapPage) pool.getPage(tid, pid, Permissions.READ_ONLY);
+                HeapPage p = (HeapPage) Database.getBufferPool().getPage(tid, pid, Permissions.READ_ONLY);
                 if (p != null) it = p.iterator();
                 else it = null;
             }

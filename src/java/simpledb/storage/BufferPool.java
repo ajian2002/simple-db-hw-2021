@@ -8,6 +8,7 @@ import simpledb.transaction.TransactionId;
 
 import java.io.IOException;
 import java.util.HashSet;
+import java.util.NoSuchElementException;
 
 /**
  * BufferPool manages the reading and writing of pages into memory from
@@ -83,15 +84,16 @@ public class BufferPool {
                 return page;
             }
         }
-        var f = Database.getCatalog().getDatabaseFile(pid.getTableId());
         try
         {
+            var f = Database.getCatalog().getDatabaseFile(pid.getTableId());
             var p = f.readPage(pid);
             if (p != null) pages.add(p);
             return p;
-        } catch (IndexOutOfBoundsException e)
+        } catch (NoSuchElementException | IndexOutOfBoundsException e)
         {
         return null;
+            //            throw new DbException("No such file");
         }
     }
 
@@ -153,10 +155,11 @@ public class BufferPool {
      * @param tableId the table to add the tuple to
      * @param t the tuple to add
      */
-    public void insertTuple(TransactionId tid, int tableId, Tuple t)
-        throws DbException, IOException, TransactionAbortedException {
-        // some code goes here
-        // not necessary for lab1
+    public void insertTuple(TransactionId tid, int tableId, Tuple t) throws DbException, IOException, TransactionAbortedException {
+
+
+        
+        pages.addAll(Database.getCatalog().getDatabaseFile(tableId).insertTuple(tid, t));
     }
 
     /**
@@ -172,10 +175,9 @@ public class BufferPool {
      * @param tid the transaction deleting the tuple.
      * @param t the tuple to delete
      */
-    public  void deleteTuple(TransactionId tid, Tuple t)
-        throws DbException, IOException, TransactionAbortedException {
-        // some code goes here
-        // not necessary for lab1
+    public void deleteTuple(TransactionId tid, Tuple t) throws DbException, IOException, TransactionAbortedException {
+        var lists = Database.getCatalog().getDatabaseFile(t.getRecordId().getPageId().getTableId()).deleteTuple(tid, t);
+        pages.addAll(lists);
     }
 
     /**

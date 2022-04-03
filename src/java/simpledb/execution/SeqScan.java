@@ -142,9 +142,6 @@ public class SeqScan implements OpIterator {
     }
 
     public void close() {
-        if (!open) throw new IllegalStateException("Scan not open");
-        // some code goes here
-        open = false;
         tablefileIterator.close();
     }
 
