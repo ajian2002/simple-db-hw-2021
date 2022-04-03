@@ -119,11 +119,11 @@ public class Tuple implements Serializable {
         if (this == o) return true;
         if (!(o instanceof Tuple)) return false;
         Tuple tuple = (Tuple) o;
-        return td.equals(tuple.td) && Objects.equals(rid, tuple.rid) && Objects.equals(fields, tuple.fields);
+        return td.equals(tuple.td) && Objects.equals(fields, tuple.fields);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(td, rid, fields);
+        return Objects.hash(td, fields);
     }
 }
