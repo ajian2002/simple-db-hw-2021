@@ -7,8 +7,8 @@ import simpledb.transaction.TransactionAbortedException;
 import simpledb.transaction.TransactionId;
 
 import java.io.IOException;
-import java.util.HashSet;
-import java.util.NoSuchElementException;
+import java.util.*;
+import java.util.function.Consumer;
 
 /**
  * BufferPool manages the reading and writing of pages into memory from
@@ -22,7 +22,90 @@ import java.util.NoSuchElementException;
  * @Threadsafe, all fields are final
  */
 public class BufferPool {
-    private HashSet<Page> pages;
+    private class PagesManager {
+
+        private class PageAndTime {
+            Long time;
+            Page page;
+            PageId id;
+
+            public PageAndTime(Long time, Page page, PageId id) {
+                this.time = time;
+                this.page = page;
+                this.id = id;
+            }
+        }
+
+        private HashMap<PageId, PageAndTime> pages;
+        private TreeMap<Long, PageId> times;
+        private int numPages;
+
+        public PagesManager(int numPages) {
+            this.numPages = numPages;
+            times = new TreeMap<>(Comparator.naturalOrder());
+            pages = new HashMap<>(numPages);
+        }
+
+        public Page get(PageId pid) {
+            if (pid == null) return null;
+            var pa = pages.get(pid);
+            if (pa == null) return null;
+            times.remove(pa.time);
+            put(pa.page);
+            return pa.page;
+        }
+
+        public void put(Page page) {
+            if (page == null) return;
+            var time = System.currentTimeMillis();
+            if (pages.size() == numPages)
+            {
+                try
+                {
+                    evictPage();
+                } catch (DbException e)
+                {
+                    e.printStackTrace();
+                }
+            }
+            pages.put(page.getId(), new PageAndTime(time, page, page.getId()));
+            times.put(time, page.getId());
+        }
+
+        public void putAll(Collection<? extends Page> p) {
+            p.forEach(this::put);
+        }
+
+        public void delete(PageId pageId) {
+            var pa = pages.get(pageId);
+            if (pa == null) return;
+            times.remove(pa.time);
+            pages.remove(pageId);
+        }
+
+        public void forEachPageId(Consumer<PageId> action) {
+            //            assertNotNull(action);
+            if (action == null) return;
+            pages.keySet().forEach(action);
+        }
+
+        public void forEachPageAndTime(Consumer<PageAndTime> action) {
+            //            assertNotNull(action);
+            if (action == null) return;
+            pages.values().forEach(action);
+        }
+
+        public PageId getLRUPage() {
+            //            System.out.println("LRU First page: " + times.firstKey());
+            //            System.out.println("LRU Last page: " + times.lastKey());
+            var enty = times.firstEntry();
+            if (enty == null) return null;
+            return enty.getValue();
+        }
+    }
+
+    private final PagesManager manager;
+
     /**
      * Bytes per page, including header.
      */
@@ -42,7 +125,7 @@ public class BufferPool {
      */
     public BufferPool(int numPages) {
         // some code goes here
-        pages = new HashSet<>(numPages);
+        manager = new PagesManager(numPages);
     }
     
     public static int getPageSize() {
@@ -77,23 +160,17 @@ public class BufferPool {
     public  Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
         // some code goes here
-        for (Page page : pages)
-        {
-            if (page.getId().equals(pid))
-            {
-                return page;
-            }
-        }
+        var page = manager.get(pid);
+        if (page != null) return page;
         try
         {
             var f = Database.getCatalog().getDatabaseFile(pid.getTableId());
             var p = f.readPage(pid);
-            if (p != null) pages.add(p);
+            if (p != null) manager.put(p);
             return p;
         } catch (NoSuchElementException | IndexOutOfBoundsException e)
         {
         return null;
-            //            throw new DbException("No such file");
         }
     }
 
@@ -156,10 +233,8 @@ public class BufferPool {
      * @param t the tuple to add
      */
     public void insertTuple(TransactionId tid, int tableId, Tuple t) throws DbException, IOException, TransactionAbortedException {
-
-
-        
-        pages.addAll(Database.getCatalog().getDatabaseFile(tableId).insertTuple(tid, t));
+        var list = Database.getCatalog().getDatabaseFile(tableId).insertTuple(tid, t);
+        manager.putAll(list);
     }
 
     /**
@@ -176,8 +251,8 @@ public class BufferPool {
      * @param t the tuple to delete
      */
     public void deleteTuple(TransactionId tid, Tuple t) throws DbException, IOException, TransactionAbortedException {
-        var lists = Database.getCatalog().getDatabaseFile(t.getRecordId().getPageId().getTableId()).deleteTuple(tid, t);
-        pages.addAll(lists);
+        var list = Database.getCatalog().getDatabaseFile(t.getRecordId().getPageId().getTableId()).deleteTuple(tid, t);
+        manager.putAll(list);
     }
 
     /**
@@ -187,8 +262,15 @@ public class BufferPool {
      */
     public synchronized void flushAllPages() throws IOException {
         // some code goes here
-        // not necessary for lab1
-
+        manager.forEachPageId(pid -> {
+            try
+            {
+                flushPage(pid);
+            } catch (IOException e)
+            {
+                e.printStackTrace();
+            }
+        });
     }
 
     /** Remove the specific page id from the buffer pool.
@@ -200,17 +282,19 @@ public class BufferPool {
         are removed from the cache so they can be reused safely
     */
     public synchronized void discardPage(PageId pid) {
-        // some code goes here
-        // not necessary for lab1
+        manager.delete(pid);
     }
 
     /**
      * Flushes a certain page to disk
      * @param pid an ID indicating the page to flush
      */
-    private synchronized  void flushPage(PageId pid) throws IOException {
-        // some code goes here
-        // not necessary for lab1
+    private synchronized void flushPage(PageId pid) throws IOException {
+        var page = manager.get(pid);
+        if (page != null)
+        {
+            Database.getCatalog().getDatabaseFile(page.getId().getTableId()).writePage(page);
+        }
     }
 
     /** Write all pages of the specified transaction to disk.
@@ -227,6 +311,15 @@ public class BufferPool {
     private synchronized  void evictPage() throws DbException {
         // some code goes here
         // not necessary for lab1
+        var pid = manager.getLRUPage();
+        try
+        {
+            flushPage(pid);
+        } catch (IOException e)
+        {
+            e.printStackTrace();
+        }
+        discardPage(pid);
     }
 
 }
