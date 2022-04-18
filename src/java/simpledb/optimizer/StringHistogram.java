@@ -6,8 +6,10 @@ import simpledb.execution.Predicate;
  * A class to represent a fixed-width histogram over a single String-based
  * field.
  */
-public class StringHistogram {
-    final IntHistogram hist;
+public class StringHistogram implements Histogram<String> {
+    private static String min = "";
+    private static String max = "zzzz";
+    private IntHistogram hist;
 
     /**
      * Create a new StringHistogram with a specified number of buckets.
@@ -19,6 +21,12 @@ public class StringHistogram {
      *            the number of buckets
      */
     public StringHistogram(int buckets) {
+        this(buckets, min, max);
+    }
+
+    public StringHistogram(int buckets, String min, String max) {
+        StringHistogram.min = min;
+        StringHistogram.max = max;
         hist = new IntHistogram(buckets, minVal(), maxVal());
     }
 
@@ -29,8 +37,10 @@ public class StringHistogram {
     private int stringToInt(String s) {
         int i;
         int v = 0;
-        for (i = 3; i >= 0; i--) {
-            if (s.length() > 3 - i) {
+        for (i = 3; i >= 0; i--)
+        {
+            if (s.length() > 3 - i)
+            {
                 int ci = s.charAt(3 - i);
                 v += (ci) << (i * 8);
             }
@@ -38,12 +48,15 @@ public class StringHistogram {
 
         // XXX: hack to avoid getting wrong results for
         // strings which don't output in the range min to max
-        if (!(s.equals("") || s.equals("zzzz"))) {
-            if (v < minVal()) {
+        if (!(s.equals("") || s.equals("zzzz")))
+        {
+            if (v < minVal())
+            {
                 v = minVal();
             }
 
-            if (v > maxVal()) {
+            if (v > maxVal())
+            {
                 v = maxVal();
             }
         }
@@ -53,12 +66,14 @@ public class StringHistogram {
 
     /** @return the maximum value indexed by the histogram */
     int maxVal() {
-        return stringToInt("zzzz");
+        //        return  max;
+        return stringToInt(max);
     }
 
     /** @return the minimum value indexed by the histogram */
     int minVal() {
-        return stringToInt("");
+        //        return min;
+        return stringToInt(min);
     }
 
     /** Add a new value to thte histogram */

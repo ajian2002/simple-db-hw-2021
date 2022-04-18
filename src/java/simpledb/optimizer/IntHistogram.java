@@ -2,9 +2,17 @@ package simpledb.optimizer;
 
 import simpledb.execution.Predicate;
 
-/** A class to represent a fixed-width histogram over a single integer-based field.
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * A class to represent a fixed-width histogram over a single integer-based field.
  */
-public class IntHistogram {
+public class IntHistogram implements Histogram<Integer> {
+
+    private List<List<Integer>> lists;
+    private int min, max, buckets;
+    private double range, sum = 0;
 
     /**
      * Create a new IntHistogram.
@@ -23,15 +31,33 @@ public class IntHistogram {
      * @param max The maximum integer value that will ever be passed to this class for histogramming
      */
     public IntHistogram(int buckets, int min, int max) {
-    	// some code goes here
+        this.lists = new ArrayList<>();
+        this.min = min;
+        this.max = max;
+        this.buckets = buckets;
+        this.sum = 0;
+        this.range = (max - min + 1) / (1.0 * buckets);
+        for (int i = 0; i < buckets; i++)
+        {
+            lists.add(new ArrayList<>());
+        }
     }
 
     /**
      * Add a value to the set of values that you are keeping a histogram of.
      * @param v Value to add to the histogram
      */
-    public void addValue(int v) {
-    	// some code goes here
+    public void addValue(Integer v) {
+        Integer index = getIndex(v);
+        if (index == null) return;
+        try
+        {
+            lists.get(index).add(v);
+            sum++;
+        } catch (Exception ignored)
+        {
+
+        }
     }
 
     /**
@@ -44,10 +70,78 @@ public class IntHistogram {
      * @param v Value
      * @return Predicted selectivity of this particular operator and value
      */
-    public double estimateSelectivity(Predicate.Op op, int v) {
+    public double estimateSelectivity(Predicate.Op op, Integer v) {
+        double cost = 0;
+        Integer index = getIndex(v);
+        switch (op)
+        {
+            case GREATER_THAN -> {
+                for (int i = index + 1; i < buckets; i++)
+                {
+                    cost += lists.get(i) != null ? lists.get(i).size() / sum : 0;
+                }
+                try
+                {
+                    if (lists.get(index) != null)
+                    {
+                        double b_f = lists.get(index).size() / sum;
+                        double b_r = (min + (1 + index) * range - v) / range;
+                        cost += b_f * b_r;
+                    }
+                } catch (Exception ignored)
+                {
+                }
 
-    	// some code goes here
-        return -1.0;
+            }
+            case EQUALS -> {
+                try
+                {
+                    cost += lists.get(index) != null ? lists.get(index).size() / (range * 1.0 * sum) : 0;
+                } catch (Exception e)
+                {
+                    cost += 0;
+                }
+            }
+            case LIKE -> {
+                try
+                {
+                    cost += lists.get(index) != null ? lists.get(index).size() / sum : 0;
+                } catch (Exception e)
+                {
+                    cost += 0;
+                }
+            }
+            case LESS_THAN -> {
+                for (int i = 0; i < (index > buckets ? buckets : index); i++)
+                {
+                    cost += lists.get(i) != null ? lists.get(i).size() / sum : 0;
+                }
+                try
+                {
+                    if (lists.get(index) != null)
+                    {
+                        double b_f = lists.get(index).size() / sum;
+                        double b_r = (v - (min + index * range)) / range;
+                        cost += b_f * b_r;
+                    }
+                } catch (Exception ignored)
+                {
+                }
+            }
+            case GREATER_THAN_OR_EQ -> {
+                cost += estimateSelectivity(Predicate.Op.GREATER_THAN, v);
+                cost += estimateSelectivity(Predicate.Op.EQUALS, v);
+
+            }
+            case LESS_THAN_OR_EQ -> {
+                cost += estimateSelectivity(Predicate.Op.LESS_THAN, v);
+                cost += estimateSelectivity(Predicate.Op.EQUALS, v);
+            }
+            case NOT_EQUALS -> {
+                cost = 1 - estimateSelectivity(Predicate.Op.EQUALS, v);
+            }
+        }
+        return cost > 1.0 ? 1 : (cost < 0 ? 0 : cost);
     }
     
     /**
@@ -67,8 +161,15 @@ public class IntHistogram {
     /**
      * @return A string describing this histogram, for debugging purposes
      */
+    @Override
     public String toString() {
-        // some code goes here
-        return null;
+        return "IntHistogram{" + "lists=" + lists + ", min=" + min + ", max=" + max + ", buckets=" + buckets + ", sum=" + sum + ", range=" + range + '}';
+    }
+
+    private Integer getIndex(int v) {
+        if (v < min) return -1;
+        if (v > max) return max + 1;
+        return (int) ((v - min) / range);
+        //       v= min+n*range <=max
     }
 }
