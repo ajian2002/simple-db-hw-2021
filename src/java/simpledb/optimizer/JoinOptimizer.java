@@ -1,14 +1,13 @@
 package simpledb.optimizer;
 
-import simpledb.common.Database;
 import simpledb.ParsingException;
+import simpledb.common.Database;
 import simpledb.execution.*;
-import simpledb.storage.TupleDesc;
-
-import java.util.*;
 
 import javax.swing.*;
-import javax.swing.tree.*;
+import javax.swing.tree.DefaultMutableTreeNode;
+import javax.swing.tree.DefaultTreeCellRenderer;
+import java.util.*;
 
 /**
  * The JoinOptimizer class is responsible for ordering a series of joins
@@ -94,6 +93,48 @@ public class JoinOptimizer {
     }
 
     /**
+     * Estimate the join cardinality of two tables.
+     */
+    public static int estimateTableJoinCardinality(Predicate.Op joinOp, String table1Alias, String table2Alias, String field1PureName, String field2PureName, int card1, int card2, boolean t1pkey, boolean t2pkey, Map<String, TableStats> stats, Map<String, Integer> tableAliasToId) {
+        int card = 0;
+        //        var a1 = stats.get(Database.getCatalog().getTableName(tableAliasToId.get(table1Alias)));
+        //        var a2 = stats.get(Database.getCatalog().getTableName(tableAliasToId.get(table2Alias)));
+        switch (joinOp)
+        {
+            case EQUALS -> {
+                //对于相等连接，当属性之一是主键时，连接产生的元组数不能大于非主键属性的基数。
+                if (t1pkey || t2pkey)
+                {
+                    if (t1pkey && t2pkey)
+                    {
+                        return card1;
+                    }
+                    if (t1pkey)
+                    {
+                        card = card2;
+                    }
+                    if (t2pkey)
+                    {
+                        card = card1;
+                    }
+                    return card;
+                }
+                else
+                {
+                    //对于没有主键的相等连接，很难说输出的大小是多少——它可能是表的基数乘积的大小（如果两个表对于所有元组都具有相同的值) - 或者它可能是 0。可以组成一个简单的启发式（例如，两个表中较大的一个的大小）。
+                    card = Math.max(card1, card2);
+                    return card;
+                }
+            }
+
+        }
+        //            对于范围扫描，同样很难准确地说出尺寸。输出的大小应该与输入的大小成比例。可以假设一定比例的叉积是由范围扫描发出的（例如，30%）。一般来说，范围连接的成本应该大于两个相同大小的表的非主键相等连接的成本。
+        return (int) (0.3 * card1 * card2);
+        // some code goes here
+        //        return card <= 0 ? 1 : card;
+    }
+
+    /**
      * Estimate the cost of a join.
      * 
      * The cost of the join should be calculated based on the join algorithm (or
@@ -119,18 +160,21 @@ public class JoinOptimizer {
      * @return An estimate of the cost of this query, in terms of cost1 and
      *         cost2
      */
-    public double estimateJoinCost(LogicalJoinNode j, int card1, int card2,
-            double cost1, double cost2) {
-        if (j instanceof LogicalSubplanJoinNode) {
+    public double estimateJoinCost(LogicalJoinNode j, int card1, int card2, double cost1, double cost2) {
+        if (j instanceof LogicalSubplanJoinNode)
+        {
             // A LogicalSubplanJoinNode represents a subquery.
             // You do not need to implement proper support for these for Lab 3.
             return card1 + cost1 + cost2;
-        } else {
+        }
+        else
+        {
+            return cost1 + card1 * cost2 + card1 + card2;
             // Insert your code here.
             // HINT: You may need to use the variable "j" if you implemented
             // a join algorithm that's more complicated than a basic
             // nested-loops join.
-            return -1.0;
+            //            return -1.0;
         }
     }
 
@@ -153,30 +197,17 @@ public class JoinOptimizer {
      *            The table stats, referenced by table names, not alias
      * @return The cardinality of the join
      */
-    public int estimateJoinCardinality(LogicalJoinNode j, int card1, int card2,
-            boolean t1pkey, boolean t2pkey, Map<String, TableStats> stats) {
-        if (j instanceof LogicalSubplanJoinNode) {
+    public int estimateJoinCardinality(LogicalJoinNode j, int card1, int card2, boolean t1pkey, boolean t2pkey, Map<String, TableStats> stats) {
+        if (j instanceof LogicalSubplanJoinNode)
+        {
             // A LogicalSubplanJoinNode represents a subquery.
             // You do not need to implement proper support for these for Lab 3.
             return card1;
-        } else {
-            return estimateTableJoinCardinality(j.p, j.t1Alias, j.t2Alias,
-                    j.f1PureName, j.f2PureName, card1, card2, t1pkey, t2pkey,
-                    stats, p.getTableAliasToIdMapping());
         }
+        else
+        {
+            return estimateTableJoinCardinality(j.p, j.t1Alias, j.t2Alias, j.f1PureName, j.f2PureName, card1, card2, t1pkey, t2pkey, stats, p.getTableAliasToIdMapping());
     }
-
-    /**
-     * Estimate the join cardinality of two tables.
-     * */
-    public static int estimateTableJoinCardinality(Predicate.Op joinOp,
-                                                   String table1Alias, String table2Alias, String field1PureName,
-                                                   String field2PureName, int card1, int card2, boolean t1pkey,
-                                                   boolean t2pkey, Map<String, TableStats> stats,
-                                                   Map<String, Integer> tableAliasToId) {
-        int card = 1;
-        // some code goes here
-        return card <= 0 ? 1 : card;
     }
 
     /**
