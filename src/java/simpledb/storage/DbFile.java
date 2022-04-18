@@ -1,13 +1,12 @@
-
 package simpledb.storage;
 
-import simpledb.common.DbException;
 import simpledb.common.Catalog;
+import simpledb.common.DbException;
 import simpledb.transaction.TransactionAbortedException;
 import simpledb.transaction.TransactionId;
 
-import java.util.*;
-import java.io.*;
+import java.io.IOException;
+import java.util.List;
 
 /**
  * The interface for database files on disk. Each table is represented by a
@@ -17,6 +16,11 @@ import java.io.*;
  * by operators.
  */
 public interface DbFile {
+    /**
+     * @return 返回文件的页数
+     */
+    int numPages();
+
     /**
      * Read the specified page from disk.
      *

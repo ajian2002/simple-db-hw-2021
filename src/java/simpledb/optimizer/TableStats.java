@@ -1,12 +1,13 @@
 package simpledb.optimizer;
 
 import simpledb.common.Database;
-import simpledb.common.Type;
+import simpledb.common.DbException;
 import simpledb.execution.Predicate;
-import simpledb.execution.SeqScan;
 import simpledb.storage.*;
-import simpledb.transaction.Transaction;
+import simpledb.transaction.TransactionAbortedException;
+import simpledb.transaction.TransactionId;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -21,62 +22,26 @@ import java.util.concurrent.ConcurrentMap;
  */
 public class TableStats {
 
-    private static final ConcurrentMap<String, TableStats> statsMap = new ConcurrentHashMap<>();
-
     static final int IOCOSTPERPAGE = 1000;
-
-    public static TableStats getTableStats(String tablename) {
-        return statsMap.get(tablename);
-    }
-
-    public static void setTableStats(String tablename, TableStats stats) {
-        statsMap.put(tablename, stats);
-    }
-    
-    public static void setStatsMap(Map<String,TableStats> s)
-    {
-        try {
-            java.lang.reflect.Field statsMapF = TableStats.class.getDeclaredField("statsMap");
-            statsMapF.setAccessible(true);
-            statsMapF.set(null, s);
-        } catch (NoSuchFieldException | IllegalAccessException | IllegalArgumentException | SecurityException e) {
-            e.printStackTrace();
-        }
-
-    }
-
-    public static Map<String, TableStats> getStatsMap() {
-        return statsMap;
-    }
-
-    public static void computeStatistics() {
-        Iterator<Integer> tableIt = Database.getCatalog().tableIdIterator();
-
-        System.out.println("Computing table stats.");
-        while (tableIt.hasNext()) {
-            int tableid = tableIt.next();
-            TableStats s = new TableStats(tableid, IOCOSTPERPAGE);
-            setTableStats(Database.getCatalog().getTableName(tableid), s);
-        }
-        System.out.println("Done.");
-    }
-
     /**
      * Number of bins for the histogram. Feel free to increase this value over
      * 100, though our tests assume that you have at least 100 bins in your
      * histograms.
      */
     static final int NUM_HIST_BINS = 100;
+    private static final ConcurrentMap<String, TableStats> statsMap = new ConcurrentHashMap<>();
+    private final int ioCostPerPage;
+    private final DbFile file;
+    ArrayList<Histogram> listsInfo;
+    private int pageNumber;
 
     /**
      * Create a new TableStats object, that keeps track of statistics on each
      * column of a table
-     * 
-     * @param tableid
-     *            The table over which to compute statistics
-     * @param ioCostPerPage
-     *            The cost per page of IO. This doesn't differentiate between
-     *            sequential-scan IO and disk seeks.
+     *
+     * @param tableid       The table over which to compute statistics
+     * @param ioCostPerPage The cost per page of IO. This doesn't differentiate between
+     *                      sequential-scan IO and disk seeks.
      */
     public TableStats(int tableid, int ioCostPerPage) {
         // For this function, you'll have to get the
@@ -87,6 +52,127 @@ public class TableStats {
         // necessarily have to (for example) do everything
         // in a single scan of the table.
         // some code goes here
+
+        this.ioCostPerPage = ioCostPerPage;
+        DbFile file = Database.getCatalog().getDatabaseFile(tableid);
+        this.file = file;
+        this.pageNumber = file.numPages();
+        TupleDesc td = file.getTupleDesc();
+        int numbers = td.numFields();
+        Map<Integer, Field> min = new HashMap<>();
+        Map<Integer, Field> max = new HashMap<>();
+        var it = file.iterator(new TransactionId());
+        try
+        {
+            it.open();
+            while (it.hasNext())
+            {
+                var t = it.next();
+                for (Integer i = 0; i < numbers; i++)
+                {
+                    switch (t.getField(i).getType())
+                    {
+                        case INT_TYPE -> {
+                            IntField f = (IntField) (t.getField(i));
+                            var minValue = ((IntField) (min.get(i))) == null ? Integer.MAX_VALUE : ((IntField) (min.get(i))).getValue();
+                            var maxValue = ((IntField) (max.get(i))) == null ? Integer.MIN_VALUE : ((IntField) (max.get(i))).getValue();
+                            if (minValue > f.getValue()) min.put(i, f);
+                            if (maxValue < f.getValue()) max.put(i, f);
+                        }
+                        case STRING_TYPE -> {
+                            StringField f = (StringField) (t.getField(i));
+                            var minValue = ((StringField) (min.get(i))) == null ? String.valueOf(Integer.MAX_VALUE) : ((StringField) (min.get(i))).getValue();
+                            var maxValue = ((StringField) (max.get(i))) == null ? String.valueOf(Integer.MIN_VALUE) : ((StringField) (min.get(i))).getValue();
+                            if (minValue.compareToIgnoreCase(f.getValue()) < 0) min.put(i, f);
+                            if (maxValue.compareToIgnoreCase(f.getValue()) < 0) max.put(i, f);
+                        }
+                    }
+                }
+            }
+            listsInfo = new ArrayList<>(numbers);
+            for (int i = 0; i < numbers; i++)
+            {
+                listsInfo.add(null);
+            }
+            for (int i = 0; i < numbers; i++)
+            {
+                switch (td.getFieldType(i))
+                {
+                    case INT_TYPE -> {
+                        var minValue = ((IntField) (min.get(i))) == null ? Integer.MAX_VALUE : ((IntField) (min.get(i))).getValue();
+                        var maxValue = ((IntField) (max.get(i))) == null ? Integer.MIN_VALUE : ((IntField) (max.get(i))).getValue();
+                        listsInfo.set(i, new IntHistogram(10, minValue, maxValue));
+                    }
+                    case STRING_TYPE -> {
+                        var minValue = ((StringField) (min.get(i))) == null ? String.valueOf(Integer.MAX_VALUE) : ((StringField) (min.get(i))).getValue();
+                        var maxValue = ((StringField) (max.get(i))) == null ? String.valueOf(Integer.MIN_VALUE) : ((StringField) (min.get(i))).getValue();
+                        listsInfo.set(i, new StringHistogram(10, minValue, maxValue));
+                    }
+                }
+            }
+            it.rewind();
+            while (it.hasNext())
+            {
+                Tuple t = it.next();
+                for (int i = 0; i < numbers; i++)
+                {
+                    switch (t.getField(i).getType())
+                    {
+                        case INT_TYPE -> {
+                            IntField f = (IntField) (t.getField(i));
+                            listsInfo.get(i).addValue(f.getValue());
+                        }
+                        case STRING_TYPE -> {
+                            StringField f = (StringField) (t.getField(i));
+                            listsInfo.get(i).addValue(f.getValue());
+                        }
+                    }
+                }
+            }
+            it.close();
+        } catch (TransactionAbortedException | DbException ex)
+        {
+            ex.printStackTrace();
+        }
+    }
+
+
+    public static TableStats getTableStats(String tablename) {
+        return statsMap.get(tablename);
+    }
+
+    public static void setTableStats(String tablename, TableStats stats) {
+        statsMap.put(tablename, stats);
+    }
+    
+    public static Map<String, TableStats> getStatsMap() {
+        return statsMap;
+    }
+
+    public static void setStatsMap(Map<String, TableStats> s) {
+        try
+    {
+            java.lang.reflect.Field statsMapF = TableStats.class.getDeclaredField("statsMap");
+            statsMapF.setAccessible(true);
+            statsMapF.set(null, s);
+        } catch (NoSuchFieldException | IllegalAccessException | IllegalArgumentException | SecurityException e)
+        {
+            e.printStackTrace();
+        }
+
+    }
+
+    public static void computeStatistics() {
+        Iterator<Integer> tableIt = Database.getCatalog().tableIdIterator();
+
+        System.out.println("Computing table stats.");
+        while (tableIt.hasNext())
+        {
+            int tableid = tableIt.next();
+            TableStats s = new TableStats(tableid, IOCOSTPERPAGE);
+            setTableStats(Database.getCatalog().getTableName(tableid), s);
+        }
+        System.out.println("Done.");
     }
 
     /**
@@ -103,7 +189,7 @@ public class TableStats {
      */
     public double estimateScanCost() {
         // some code goes here
-        return 0;
+        return ioCostPerPage * pageNumber;
     }
 
     /**
@@ -117,7 +203,7 @@ public class TableStats {
      */
     public int estimateTableCardinality(double selectivityFactor) {
         // some code goes here
-        return 0;
+        return (int) (selectivityFactor * totalTuples());
     }
 
     /**
@@ -150,7 +236,17 @@ public class TableStats {
      */
     public double estimateSelectivity(int field, Predicate.Op op, Field constant) {
         // some code goes here
-        return 1.0;
+        switch (file.getTupleDesc().getFieldType(field))
+        {
+            case INT_TYPE -> {
+                return listsInfo.get(field).estimateSelectivity(op, ((IntField) constant).getValue());
+            }
+            case STRING_TYPE -> {
+                return listsInfo.get(field).estimateSelectivity(op, ((StringField) constant).getValue());
+            }
+        }
+        return -1;
+
     }
 
     /**
@@ -158,7 +254,8 @@ public class TableStats {
      * */
     public int totalTuples() {
         // some code goes here
-        return 0;
+        int pageTupleNumber = BufferPool.getPageSize() * 8 / (file.getTupleDesc().getSize() * 8 + 1);
+        return pageNumber * pageTupleNumber;
     }
 
 }
