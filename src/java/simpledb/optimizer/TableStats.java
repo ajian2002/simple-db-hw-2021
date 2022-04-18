@@ -32,8 +32,9 @@ public class TableStats {
     private static final ConcurrentMap<String, TableStats> statsMap = new ConcurrentHashMap<>();
     private final int ioCostPerPage;
     private final DbFile file;
-    ArrayList<Histogram> listsInfo;
+    private ArrayList<Histogram> listsInfo;
     private int pageNumber;
+    private int tupleNumber;
 
     /**
      * Create a new TableStats object, that keeps track of statistics on each
@@ -52,7 +53,7 @@ public class TableStats {
         // necessarily have to (for example) do everything
         // in a single scan of the table.
         // some code goes here
-
+        this.tupleNumber = 0;
         this.ioCostPerPage = ioCostPerPage;
         DbFile file = Database.getCatalog().getDatabaseFile(tableid);
         this.file = file;
@@ -68,6 +69,7 @@ public class TableStats {
             while (it.hasNext())
             {
                 var t = it.next();
+                tupleNumber++;
                 for (Integer i = 0; i < numbers; i++)
                 {
                     switch (t.getField(i).getType())
@@ -218,6 +220,7 @@ public class TableStats {
      * */
     public double avgSelectivity(int field, Predicate.Op op) {
         // some code goes here
+        //        return listsInfo.get(field).avgSelectivity();
         return 1.0;
     }
 
@@ -254,8 +257,7 @@ public class TableStats {
      * */
     public int totalTuples() {
         // some code goes here
-        int pageTupleNumber = BufferPool.getPageSize() * 8 / (file.getTupleDesc().getSize() * 8 + 1);
-        return pageNumber * pageTupleNumber;
+        return tupleNumber;
     }
 
 }
