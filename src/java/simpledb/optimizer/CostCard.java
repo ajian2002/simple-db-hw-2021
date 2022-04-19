@@ -14,4 +14,13 @@ public class CostCard {
     public int card;
     /** The optimal subplan */
     public List<LogicalJoinNode> plan;
+
+    public CostCard() {
+    }
+
+    public CostCard(double cost, int card, List<LogicalJoinNode> plan) {
+        this.cost = cost;
+        this.card = card;
+        this.plan = plan;
+    }
 }

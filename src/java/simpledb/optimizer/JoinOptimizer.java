@@ -21,10 +21,8 @@ public class JoinOptimizer {
     /**
      * Constructor
      * 
-     * @param p
-     *            the logical plan being optimized
-     * @param joins
-     *            the list of joins being performed
+     * @param p     the logical plan being optimized
+     * @param joins the list of joins being performed
      */
     public JoinOptimizer(LogicalPlan p, List<LogicalJoinNode> joins) {
         this.p = p;
@@ -262,14 +260,32 @@ public class JoinOptimizer {
      *             when stats or filter selectivities is missing a table in the
      *             join, or or when another internal error occurs
      */
-    public List<LogicalJoinNode> orderJoins(
-            Map<String, TableStats> stats,
-            Map<String, Double> filterSelectivities, boolean explain)
-            throws ParsingException {
-
-        // some code goes here
-        //Replace the following
-        return joins;
+    public List<LogicalJoinNode> orderJoins(Map<String, TableStats> stats, Map<String, Double> filterSelectivities, boolean explain) throws ParsingException {
+        //  final LogicalPlan p;
+        //    final List<LogicalJoinNode> joins;
+        //joins
+        var planchche=new PlanCache();
+        Set<LogicalJoinNode> lastSets=null;
+        for (int i = 1; i <= joins.size(); i++)
+        {
+            var tempSets = enumerateSubsets(joins, i);
+            for (Set<LogicalJoinNode> sets : tempSets)
+            {
+                var best = new CostCard(Double.MAX_VALUE, Integer.MAX_VALUE, new ArrayList<>());
+//                var tempSSets = enumerateSubsets(List.of(sets), i);
+                for (LogicalJoinNode node : sets)
+                {
+                    CostCard tempCc=computeCostAndCardOfSubplan(stats,filterSelectivities,node,sets,best.cost,planchche);
+//                    System.out.println(tempCc);
+                    if (tempCc!=null&&tempCc.cost< best.cost){
+                        best=tempCc;
+                    }
+                }
+                planchche.addPlan(sets,best.cost, best.card, best.plan);
+                lastSets=sets;
+            }
+        }
+        return planchche.getOrder(lastSets);
     }
 
     // ===================== Private Methods =================================
