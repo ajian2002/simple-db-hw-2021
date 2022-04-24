@@ -134,10 +134,20 @@ public class HeapFile implements DbFile {
         {
             try
             {
-                var page = Database.getBufferPool().getPage(tid, new HeapPageId(getId(), i), Permissions.READ_WRITE);
-                ((HeapPage) page).insertTuple(t);
-                return new ArrayList<>(List.of(page));
-            } catch (Exception ignored)
+                var page = Database.getBufferPool().getPage(tid, new HeapPageId(getId(), i), Permissions.READ_ONLY);
+                if (((HeapPage) page).getNumEmptySlots() != 0)
+                {
+                    page = Database.getBufferPool().getPage(tid, new HeapPageId(getId(), i), Permissions.READ_WRITE);
+                    ((HeapPage) page).insertTuple(t);
+                    page.markDirty(true, tid);
+                    return new ArrayList<>(List.of(page));
+                }
+                else
+                {
+                    Database.getBufferPool().unsafeReleasePage(tid, page.getId());
+                }
+
+            } catch (Exception e)
             {
                 continue;
             }
@@ -153,7 +163,7 @@ public class HeapFile implements DbFile {
         {
             var page = Database.getBufferPool().getPage(tid, t.getRecordId().getPageId(), Permissions.READ_WRITE);
             ((HeapPage) page).deleteTuple(t);
-            //            Database.getBufferPool().deleteTuple(tid, t);
+            page.markDirty(true, tid);
             return new ArrayList<>(List.of(page));
         } catch (DbException e)
         {
