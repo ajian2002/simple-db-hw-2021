@@ -47,16 +47,16 @@ public class BufferPool {
         // some code goes here
         pagesManager = new PagesManager(numPages);
     }
-    
+
     public static int getPageSize() {
       return pageSize;
     }
-    
+
     // THIS FUNCTION SHOULD ONLY BE USED FOR TESTING!!
     public static void setPageSize(int pageSize) {
     	BufferPool.pageSize = pageSize;
     }
-    
+
     // THIS FUNCTION SHOULD ONLY BE USED FOR TESTING!!
     public static void resetPageSize() {
     	BufferPool.pageSize = DEFAULT_PAGE_SIZE;
@@ -126,20 +126,16 @@ public class BufferPool {
     public void transactionComplete(TransactionId tid) {
         // some code goes here
         // not necessary for lab1|lab2
-        //        try
-        //        {
-        //            flushPages(tid);
-        //            lockManager.getPagesByTid(tid).forEach(pid -> {
-        //                unsafeReleasePage(tid, pid);
-        //            });
-        //        } catch (IOException e)
-        //        {
-        //            e.printStackTrace();
-        //        }
+        lockManager.getPagesByTid(tid).forEach(pid -> {
+            unsafeReleasePage(tid, pid);
+        });
+
     }
 
-    /** Return true if the specified transaction has a lock on the specified page */
-    public boolean holdsLock(TransactionId tid, PageId p) {
+    /**
+     * Return true if the specified transaction has a lock on the specified page
+     */
+    public boolean holdsLock(TransactionId tid, PageId pid) {
         // some code goes here
         // not necessary for lab1|lab2
         return lockManager.hasLock(pid, tid);
@@ -156,30 +152,30 @@ public class BufferPool {
         // some code goes here
         // not necessary for lab1|lab2
         //        var pages = lockManager.getPagesByTid(tid);
-        //        if (commit)
-        //        {
-        //            transactionComplete(tid);
-        //        }
-        //        else
-        //        {
-        //            //??????TODO
-        //        }
+        if (commit)
+        {
+            transactionComplete(tid);
+        }
+        else
+        {
+            //??????TODO
+        }
     }
 
     /**
      * Add a tuple to the specified table on behalf of transaction tid.  Will
-     * acquire a write lock on the page the tuple is added to and any other 
-     * pages that are updated (Lock acquisition is not needed for lab2). 
+     * acquire a write lock on the page the tuple is added to and any other
+     * pages that are updated (Lock acquisition is not needed for lab2).
      * May block if the lock(s) cannot be acquired.
-     * 
+     * <p>
      * Marks any pages that were dirtied by the operation as dirty by calling
-     * their markDirty bit, and adds versions of any pages that have 
-     * been dirtied to the cache (replacing any existing versions of those pages) so 
-     * that future requests see up-to-date pages. 
+     * their markDirty bit, and adds versions of any pages that have
+     * been dirtied to the cache (replacing any existing versions of those pages) so
+     * that future requests see up-to-date pages.
      *
-     * @param tid the transaction adding the tuple
+     * @param tid     the transaction adding the tuple
      * @param tableId the table to add the tuple to
-     * @param t the tuple to add
+     * @param t       the tuple to add
      */
     public void insertTuple(TransactionId tid, int tableId, Tuple t) throws DbException, IOException, TransactionAbortedException {
         var list = Database.getCatalog().getDatabaseFile(tableId).insertTuple(tid, t);
@@ -190,14 +186,14 @@ public class BufferPool {
      * Remove the specified tuple from the buffer pool.
      * Will acquire a write lock on the page the tuple is removed from and any
      * other pages that are updated. May block if the lock(s) cannot be acquired.
-     *
+     * <p>
      * Marks any pages that were dirtied by the operation as dirty by calling
-     * their markDirty bit, and adds versions of any pages that have 
-     * been dirtied to the cache (replacing any existing versions of those pages) so 
-     * that future requests see up-to-date pages. 
+     * their markDirty bit, and adds versions of any pages that have
+     * been dirtied to the cache (replacing any existing versions of those pages) so
+     * that future requests see up-to-date pages.
      *
      * @param tid the transaction deleting the tuple.
-     * @param t the tuple to delete
+     * @param t   the tuple to delete
      */
     public void deleteTuple(TransactionId tid, Tuple t) throws DbException, IOException, TransactionAbortedException {
         var list = Database.getCatalog().getDatabaseFile(t.getRecordId().getPageId().getTableId()).deleteTuple(tid, t);
@@ -214,7 +210,10 @@ public class BufferPool {
         pagesManager.forEachPageId(pid -> {
             try
             {
-                flushPage(pid);
+                if (Objects.requireNonNull(pagesManager.get(pid)).isDirty() != null)
+                {
+                    flushPage(pid);
+                }
             } catch (IOException e)
             {
                 e.printStackTrace();
@@ -222,26 +221,29 @@ public class BufferPool {
         });
     }
 
-    /** Remove the specific page id from the buffer pool.
-        Needed by the recovery manager to ensure that the
-        buffer pool doesn't keep a rolled back page in its
-        cache.
-        
-        Also used by B+ tree files to ensure that deleted pages
-        are removed from the cache so they can be reused safely
-    */
+    /**
+     * Remove the specific page id from the buffer pool.
+     * Needed by the recovery manager to ensure that the
+     * buffer pool doesn't keep a rolled back page in its
+     * cache.
+     * <p>
+     * Also used by B+ tree files to ensure that deleted pages
+     * are removed from the cache so they can be reused safely
+     */
     public synchronized void discardPage(PageId pid) {
         pagesManager.delete(pid);
     }
 
     /**
      * Flushes a certain page to disk
+     *
      * @param pid an ID indicating the page to flush
      */
     private synchronized void flushPage(PageId pid) throws IOException {
         var page = pagesManager.get(pid);
         if (page != null)
         {
+            page.markDirty(false, null);
             Database.getCatalog().getDatabaseFile(page.getId().getTableId()).writePage(page);
         }
     }
@@ -251,15 +253,19 @@ public class BufferPool {
     public synchronized  void flushPages(TransactionId tid) throws IOException {
         // some code goes here
         // not necessary for lab1|lab2
-        //        lockManager.getPagesByTid(tid).forEach(pid -> {
-        //            try
-        //            {
-        //                flushPage(pid);
-        //            } catch (IOException e)
-        //            {
-        //                e.printStackTrace();
-        //            }
-        //        });
+        lockManager.getPagesByTid(tid).forEach(pid -> {
+            try
+            {
+                // 脏
+                if (Objects.requireNonNull(pagesManager.get(pid)).isDirty() != null)
+                {
+                    flushPage(pid);
+                }
+            } catch (IOException e)
+            {
+                e.printStackTrace();
+            }
+        });
     }
 
     /**
@@ -272,13 +278,16 @@ public class BufferPool {
         var pid = pagesManager.getLRUPage();
         try
         {
-            //            if (Objects.requireNonNull(pagesManager.get(pid)).isDirty() != null)
-            flushPage(pid);
+            //不脏
+            if (Objects.requireNonNull(pagesManager.get(pid)).isDirty() == null)
+            {
+                flushPage(pid);
+                discardPage(pid);
+            }
         } catch (IOException e)
         {
             e.printStackTrace();
         }
-        discardPage(pid);
     }
 
     private class PagesManager {
