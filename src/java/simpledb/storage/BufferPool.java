@@ -283,6 +283,7 @@ public class BufferPool {
         // some code goes here
         // not necessary for lab1
         var pid = pagesManager.getLRUPage();
+        if (pid == null) return;
         try
         {
             //不脏
