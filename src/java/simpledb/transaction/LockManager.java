@@ -163,30 +163,10 @@ public class LockManager {
         return pages;
     }
 
-    private class Data {
-        private final ReadWriteLock lock = new ReentrantReadWriteLock();
-        private final ArrayList<LockStatus> lists = new ArrayList<>();
-        private PageId pid = null;
-
-        public Data(PageId pid) {
-            this.pid = pid;
-        }
-
-        public ArrayList<LockStatus> getLists() {
-            return lists;
-        }
-
-        public PageId getPid() {
-            return pid;
-        }
-
-        public Lock getRlock() {
-            return lock.readLock();
-        }
-
-        public Lock getWlock() {
-            return lock.writeLock();
-        }
+    @Override
+    public String toString() {
+        return "dataLock>10";
+        //        return "LockManager{" + "dataLockMap=" + dataLockMap + '}';
     }
 
     private class LockStatus {
@@ -204,7 +184,7 @@ public class LockManager {
 
         @Override
         public String toString() {
-            return "LockStatus{" + "tid=" + tid + ", d=" + d + ", lock=" + lock + ", isReadLock=" + isReadLock + ", isWriteLock=" + isWriteLock + ", gettedLock=" + gettedLock + '}';
+            return "LockStatus{" + "tid=" + tid + (isReadLock ? ", isReadLock=" : " isWriteLock + ") + "gettedLock=" + gettedLock + '}';
         }
 
         @Override
@@ -295,12 +275,16 @@ public class LockManager {
                 try
                 {
                     lock.unlock();
-                } catch (Exception ignored)
+                    gettedLock = false;
+                    isWriteLock = false;
+                    isReadLock = false;
+                    setWriteLock();
+                } catch (Exception e)
                 {
-
+                    e.printStackTrace();
                 }
             }
-            gettedLock = w.tryLock();
+            else gettedLock = w.tryLock();
             lock = w;
             isWriteLock = true;
             isReadLock = false;
@@ -308,4 +292,34 @@ public class LockManager {
 
     }
 
+    private class Data {
+        private final ReadWriteLock lock = new ReentrantReadWriteLock();
+        private final ArrayList<LockStatus> lists = new ArrayList<>();
+        private PageId pid = null;
+
+        public Data(PageId pid) {
+            this.pid = pid;
+        }
+
+        public ArrayList<LockStatus> getLists() {
+            return lists;
+        }
+
+        public PageId getPid() {
+            return pid;
+        }
+
+        public Lock getRlock() {
+            return lock.readLock();
+        }
+
+        public Lock getWlock() {
+            return lock.writeLock();
+        }
+
+        @Override
+        public String toString() {
+            return "Data{" + "lists=" + lists + '}';
+        }
+    }
 }
