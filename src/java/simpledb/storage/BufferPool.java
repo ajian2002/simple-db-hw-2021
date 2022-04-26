@@ -78,14 +78,25 @@ public class BufferPool {
      * @param perm the requested permissions on the page
      */
     public Page getPage(TransactionId tid, PageId pid, Permissions perm) throws TransactionAbortedException, DbException {
-        switch (perm)
+        try
         {
-            case READ_ONLY -> {
-                lockManager.getReadLock(pid, tid);
+            switch (perm)
+            {
+                case READ_ONLY -> {
+                    lockManager.getReadLock(pid, tid);
+                }
+                case READ_WRITE -> {
+                    lockManager.getWriteLock(pid, tid);
+                }
             }
-            case READ_WRITE -> {
-                lockManager.getWriteLock(pid, tid);
-            }
+        } catch (TransactionAbortedException e)
+        {
+            //            e.printStackTrace();
+            System.out.println("[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":事务中断");
+            transactionComplete(tid, false);
+            System.out.println("[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":事务中断,锁释放完成");
+
+            return null;
         }
 
         // some code goes here
@@ -124,8 +135,13 @@ public class BufferPool {
      * @param tid the ID of the transaction requesting the unlock
      */
     public void transactionComplete(TransactionId tid) {
-        // some code goes here
-        // not necessary for lab1|lab2
+        try
+        {
+            flushPages(tid);
+        } catch (IOException e)
+        {
+            e.printStackTrace();
+        }
         lockManager.getPagesByTid(tid).forEach(pid -> {
             unsafeReleasePage(tid, pid);
         });
@@ -155,8 +171,6 @@ public class BufferPool {
      * @param commit a flag indicating whether we should commit or abort
      */
     public void transactionComplete(TransactionId tid, boolean commit) {
-        // some code goes here
-        // not necessary for lab1|lab2
         //        var pages = lockManager.getPagesByTid(tid);
         if (commit)
         {
@@ -164,7 +178,14 @@ public class BufferPool {
         }
         else
         {
-            //??????TODO
+            //恢复脏页面
+            lockManager.getPagesByTid(tid).forEach(pid -> {
+                discardPage(pid);
+            });
+            //放锁
+            lockManager.getPagesByTid(tid).forEach(pid -> {
+                unsafeReleasePage(tid, pid);
+            });
         }
     }
 
@@ -185,6 +206,9 @@ public class BufferPool {
      */
     public void insertTuple(TransactionId tid, int tableId, Tuple t) throws DbException, IOException, TransactionAbortedException {
         var list = Database.getCatalog().getDatabaseFile(tableId).insertTuple(tid, t);
+        list.forEach(page -> {
+            page.markDirty(true, tid);
+        });
         pagesManager.putAll(list);
     }
 
@@ -203,6 +227,9 @@ public class BufferPool {
      */
     public void deleteTuple(TransactionId tid, Tuple t) throws DbException, IOException, TransactionAbortedException {
         var list = Database.getCatalog().getDatabaseFile(t.getRecordId().getPageId().getTableId()).deleteTuple(tid, t);
+        list.forEach(page -> {
+            page.markDirty(true, tid);
+        });
         pagesManager.putAll(list);
     }
 
@@ -258,13 +285,14 @@ public class BufferPool {
      * Write all pages of the specified transaction to disk.
      */
     public synchronized void flushPages(TransactionId tid) throws IOException {
-        // some code goes here
-        // not necessary for lab1|lab2
         lockManager.getPagesByTid(tid).forEach(pid -> {
             try
             {
+                if (pid == null) return;
+                var p = pagesManager.get(pid);
+                if (p == null) return;
                 // 脏
-                if (Objects.requireNonNull(pagesManager.get(pid)).isDirty() != null)
+                if (p.isDirty() != null)
                 {
                     flushPage(pid);
                 }
@@ -280,18 +308,15 @@ public class BufferPool {
      * Flushes the page to disk to ensure dirty pages are updated on disk.
      */
     private synchronized void evictPage() throws DbException {
-        // some code goes here
-        // not necessary for lab1
-        var pid = pagesManager.getLRUPage();
+        //        var pid = pagesManager.getLRUPage();
+        PageId pid = pagesManager.getNotDirtyLRUPage();
         if (pid == null) return;
         try
         {
             //不脏
-            if (Objects.requireNonNull(pagesManager.get(pid)).isDirty() == null)
-            {
-                flushPage(pid);
-                discardPage(pid);
-            }
+            flushPage(pid);
+            discardPage(pid);
+
         } catch (IOException e)
         {
             e.printStackTrace();
@@ -314,8 +339,9 @@ public class BufferPool {
             if (pid == null) return null;
             var pa = pages.get(pid);
             if (pa == null) return null;
+            var pp = times.get(pa.time);
             times.remove(pa.time);
-            put(pa.page);
+            times.put(System.currentTimeMillis(), pp);
             return pa.page;
         }
 
@@ -365,6 +391,22 @@ public class BufferPool {
             var enty = times.firstEntry();
             if (enty == null) return null;
             return enty.getValue();
+        }
+
+        public PageId getNotDirtyLRUPage() throws DbException {
+            boolean allDirty = false;
+            var it = pages.values().iterator();
+            while (it.hasNext())
+            {
+                PageId e = it.next().id;
+                if (pages.get(e).page.isDirty() == null) return e;
+                allDirty = true;
+            }
+            if (allDirty)
+            {
+                throw new DbException("all page is dirty");
+            }
+            return null;
         }
 
         private class PageAndTime {

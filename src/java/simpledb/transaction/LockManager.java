@@ -28,7 +28,7 @@ public class LockManager {
         return getData(pid).getLists();
     }
 
-    public void getWriteLock(PageId pid, TransactionId tid) {
+    public void getWriteLock(PageId pid, TransactionId tid) throws TransactionAbortedException {
         var data = getData(pid);
         var lockStatus = getLockStatus(pid);
         LockStatus temp = null;
@@ -46,31 +46,34 @@ public class LockManager {
         {
             if (temp.isReadLock)
             {
-                System.out.println("已有读锁,申请写锁" + pid.getTableId() + ":" + pid.getPageNumber() + " " + Thread.currentThread().getId());
+                System.out.println("[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":已有读锁,申请写锁:");
                 temp.setWriteLock();
+                System.out.println("[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":已有读锁,申请写锁:" + (temp.gettedLock && temp.isWriteLock ? "成功" : "失败"));
                 if (!temp.gettedLock)
                 {
-                    temp.lock.lock(tid);
-                    temp.gettedLock = true;
+                    temp.setLockBlock();
+                    System.out.println("[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":已有读锁,阻塞申请写锁:" + (temp.gettedLock && temp.isWriteLock ? "成功" : "失败"));
                 }
             }
             //            else System.out.println("已有写锁,申请写锁");
         }
         else
         {
+            System.out.println("[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":未持有锁,申请写锁:");
             temp = new LockStatus(tid, data);
             temp.setWriteLock();
             data.lists.add(temp);
+            System.out.println("[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":未持有锁,申请写锁:" + (temp.gettedLock && temp.isWriteLock ? "成功" : "失败"));
             if (!temp.gettedLock)
             {
-                temp.lock.lock(tid);
-                temp.gettedLock = true;
+                temp.setLockBlock();
+                System.out.println("[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":未持有锁,阻塞申请写锁:" + (temp.gettedLock && temp.isWriteLock ? "成功" : "失败"));
             }
         }
         data.lists.set(data.lists.indexOf(temp), temp);
     }
 
-    public void getReadLock(PageId pid, TransactionId tid) {
+    public void getReadLock(PageId pid, TransactionId tid) throws TransactionAbortedException {
         var data = getData(pid);
         LockStatus temp = null;
         boolean has = false;
@@ -87,28 +90,24 @@ public class LockManager {
         {
             if (temp.isWriteLock)
             {
-                System.out.println("已有写锁,申请读锁,测试要求不实现" + pid.getTableId() + ":" + pid.getPageNumber() + " " + Thread.currentThread().getId());
-                //                temp.setReadLock();
-                //                data.lists.set(data.lists.indexOf(temp), temp);
-                //                if (!temp.gettedLock)
-                //                {
-                //                    temp.lock.lock();
-                //                    temp.gettedLock = true;
-                //                }
+                //                System.out.println("已有写锁,申请读锁,测试要求不实现" + "[" + pid.getTableId() % 100 + ":" + pid.getPageNumber() + "]" + Thread.currentThread().getName());
             }
             // else          System.out.println("已有读锁,申请读锁");
 
         }
         else
         {
+            System.out.println("[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":未持有锁,申请读锁:");
             temp = new LockStatus(tid, data);
             temp.setReadLock();
             data.lists.add(temp);
+            System.out.println("[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":未持有锁,申请读锁:" + (temp.gettedLock && temp.isReadLock ? "成功" : "失败"));
             if (!temp.gettedLock)
             {
-                temp.lock.lock(tid);
-                temp.gettedLock = true;
+                temp.setLockBlock();
+                System.out.println("[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":未持有锁,阻塞申请读锁:" + (temp.gettedLock && temp.isReadLock ? "成功" : "失败"));
             }
+
         }
         data.lists.set(data.lists.indexOf(temp), temp);
     }
@@ -125,13 +124,14 @@ public class LockManager {
                     try
                     {
                         ls.lock.unlock(tid);
-                    } catch (Exception ignored)
-                    {
+                        System.out.println("[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":释放" + (ls.gettedLock && ls.isReadLock ? "读锁" : ls.gettedLock && ls.isWriteLock ? "写锁" : "未知锁"));
 
+                    } catch (Exception e)
+                    {
+                        e.printStackTrace();
                     }
                 }
                 lockStatus.remove(ls);
-                System.out.println("释放 " + (ls.isReadLock ? "读锁" : "写锁") + pid.getTableId() + ":" + pid.getPageNumber() + " " + Thread.currentThread().getId());
                 break;
             }
         }
@@ -222,7 +222,7 @@ public class LockManager {
 
         @Override
         public String toString() {
-            return "LockStatus{" + "tid=" + tid + ", d=" + d + ", lock=" + lock + ", isReadLock=" + isReadLock + ", isWriteLock=" + isWriteLock + ", gettedLock=" + gettedLock + '}';
+            return "LockStatus{" + "tid=" + tid + (gettedLock ? (isReadLock ? "ReadLock" : isWriteLock ? "WriteLock" : "持有但未知") : "未持有锁") + '}';
         }
 
         @Override
@@ -238,53 +238,38 @@ public class LockManager {
             return Objects.hash(tid, d);
         }
 
-        public void setReadLock() {
-            if (!gettedLock && !isReadLock && !isWriteLock)
+        public void setLockBlock() throws TransactionAbortedException {
+            if (!gettedLock)
             {
-                var r = d.getRlock();
-                gettedLock = r.tryLock(tid);
-                lock = r;
-                isReadLock = true;
-                isWriteLock = false;
-                return;
+                lock.lock(tid);
+                //                gettedLock = true;
+                lock.tryLock(tid);
             }
-            if (!gettedLock && isReadLock)
-            {
-                var r = d.getRlock();
-                gettedLock = r.tryLock(tid);
-                lock = r;
-                isReadLock = true;
-                isWriteLock = false;
-                return;
-            }
-            if (!gettedLock && isWriteLock)
-            {
-                //没拿到写锁,加写锁?
-                if (d.lists.size() == 1 && d.lists.get(0).tid.equals(tid))
-                {
-                    try
-                    {
-                        d.getRlock().lock(tid);
-                        lock.unlock(tid);
-                        lock = d.getRlock();
-                        isReadLock = true;
-                        isWriteLock = false;
-                    } catch (Exception e)
-                    {
-                        gettedLock = lock.tryLock(tid);
-                    }
-                }
-            }
+        }
+
+        public synchronized void setReadLock() throws TransactionAbortedException {
+            System.out.println("[" + "pn=" + d.pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + "设置读锁前" + d.lock.toString());
+            var r = d.getRlock();
+            gettedLock = r.tryLock(tid);
+            lock = r;
+            isReadLock = true;
+            isWriteLock = false;
+            System.out.println("[" + "pn=" + d.pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + "设置读锁后" + d.lock.toString());
 
         }
 
-        public void setWriteLock() {
+        public synchronized void setWriteLock() throws TransactionAbortedException {
+            System.out.println("[" + "pn=" + d.pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + "设置写锁前" + d.lock.toString());
             var w = d.getWlock();
             //单一读锁可升级为写锁
             gettedLock = w.tryLock(tid);
-            lock = w;
-            isWriteLock = true;
-            isReadLock = false;
+            if (gettedLock)
+            {
+                lock = w;
+                isWriteLock = true;
+                isReadLock = false;
+            }
+            System.out.println("[" + "pn=" + d.pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + "设置写锁后" + d.lock.toString());
         }
 
     }
