@@ -144,7 +144,8 @@ public class HeapFile implements DbFile {
                 }
                 else
                 {
-                    Database.getBufferPool().unsafeReleasePage(tid, page.getId());
+                    if (Database.getBufferPool().whichLock(tid, page.getId()) == Permissions.READ_ONLY)
+                        Database.getBufferPool().unsafeReleasePage(tid, page.getId());
                 }
 
             } catch (Exception e)

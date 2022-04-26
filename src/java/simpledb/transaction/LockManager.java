@@ -1,14 +1,12 @@
 package simpledb.transaction;
 
+import simpledb.common.Permissions;
 import simpledb.storage.PageId;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * 锁管理器,基于PageID
@@ -52,7 +50,7 @@ public class LockManager {
                 temp.setWriteLock();
                 if (!temp.gettedLock)
                 {
-                    temp.lock.lock();
+                    temp.lock.lock(tid);
                     temp.gettedLock = true;
                 }
             }
@@ -65,7 +63,7 @@ public class LockManager {
             data.lists.add(temp);
             if (!temp.gettedLock)
             {
-                temp.lock.lock();
+                temp.lock.lock(tid);
                 temp.gettedLock = true;
             }
         }
@@ -108,7 +106,7 @@ public class LockManager {
             data.lists.add(temp);
             if (!temp.gettedLock)
             {
-                temp.lock.lock();
+                temp.lock.lock(tid);
                 temp.gettedLock = true;
             }
         }
@@ -126,7 +124,7 @@ public class LockManager {
                 {
                     try
                     {
-                        ls.lock.unlock();
+                        ls.lock.unlock(tid);
                     } catch (Exception ignored)
                     {
 
@@ -153,6 +151,26 @@ public class LockManager {
         return false;
     }
 
+    public Permissions whichLock(PageId pid, TransactionId tid) {
+        if (hasLock(pid, tid))
+        {
+            var data = getData(pid);
+            var lockStatus = getLockStatus(pid);
+            for (LockStatus ls : lockStatus)
+            {
+                if (tid.equals(ls.tid))
+                {
+                    if (ls.gettedLock)
+                    {
+                        return ls.isReadLock ? Permissions.READ_ONLY : Permissions.READ_WRITE;
+                    }
+                }
+            }
+
+        }
+        return null;
+    }
+
     public List<PageId> getPagesByTid(TransactionId tid) {
         List<PageId> pages = new ArrayList<PageId>();
         dataLockMap.values().forEach(e -> {
@@ -164,7 +182,7 @@ public class LockManager {
     }
 
     private class Data {
-        private final ReadWriteLock lock = new ReentrantReadWriteLock();
+        private final ReadWriteLock lock = new FakeReadWriteLock();
         private final ArrayList<LockStatus> lists = new ArrayList<>();
         private PageId pid = null;
 
@@ -221,68 +239,41 @@ public class LockManager {
         }
 
         public void setReadLock() {
-            if (gettedLock)
-            {
-                //                if (isWriteLock)
-                //                {
-                //                    if (d.lists.size() == 1 && d.lists.get(0).tid.equals(tid))
-                //                    {
-                //                        try
-                //                        {
-                //                            d.getRlock().lock();
-                //                            lock.unlock();
-                //                            lock = d.getRlock();
-                //                            isReadLock = true;
-                //                            isWriteLock = false;
-                //                        } catch (Exception e)
-                //                        {
-                //
-                //                        }
-                //                    }
-                //                }
-                //                var w = d.getWlock();
-                //                var r = d.getRlock();
-                //                if (!gettedLock)
-                //                {
-                //                    lock.lock();
-                //                    gettedLock = true;
-                //                }
-                //                w.unlock();
-                //                lock = r;
-
-            }
-            else if (!gettedLock && isWriteLock)
-            {
-                //                if (d.lists.size() == 1 && d.lists.get(0).tid.equals(tid))
-                //                {
-                //                    try
-                //                    {
-                //                        d.getRlock().lock();
-                //                        lock.unlock();
-                //                        lock = d.getRlock();
-                //                        isReadLock = true;
-                //                        isWriteLock = false;
-                //                    } catch (Exception e)
-                //                    {
-                gettedLock = lock.tryLock();
-                //                    }
-                //                }
-            }
-            else if (!gettedLock && isReadLock)
+            if (!gettedLock && !isReadLock && !isWriteLock)
             {
                 var r = d.getRlock();
-                gettedLock = r.tryLock();
+                gettedLock = r.tryLock(tid);
                 lock = r;
                 isReadLock = true;
                 isWriteLock = false;
+                return;
             }
-            else if (!gettedLock && !isReadLock && !isWriteLock)
+            if (!gettedLock && isReadLock)
             {
                 var r = d.getRlock();
-                gettedLock = r.tryLock();
+                gettedLock = r.tryLock(tid);
                 lock = r;
                 isReadLock = true;
                 isWriteLock = false;
+                return;
+            }
+            if (!gettedLock && isWriteLock)
+            {
+                //没拿到写锁,加写锁?
+                if (d.lists.size() == 1 && d.lists.get(0).tid.equals(tid))
+                {
+                    try
+                    {
+                        d.getRlock().lock(tid);
+                        lock.unlock(tid);
+                        lock = d.getRlock();
+                        isReadLock = true;
+                        isWriteLock = false;
+                    } catch (Exception e)
+                    {
+                        gettedLock = lock.tryLock(tid);
+                    }
+                }
             }
 
         }
@@ -290,17 +281,7 @@ public class LockManager {
         public void setWriteLock() {
             var w = d.getWlock();
             //单一读锁可升级为写锁
-            if (gettedLock && isReadLock && d.lists.size() == 1 && d.lists.get(0).tid.equals(tid))
-            {
-                try
-                {
-                    lock.unlock();
-                } catch (Exception ignored)
-                {
-
-                }
-            }
-            gettedLock = w.tryLock();
+            gettedLock = w.tryLock(tid);
             lock = w;
             isWriteLock = true;
             isReadLock = false;

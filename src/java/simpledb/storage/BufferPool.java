@@ -19,7 +19,7 @@ import java.util.function.Consumer;
  * The BufferPool is also responsible for locking;  when a transaction fetches
  * a page, BufferPool checks that the transaction has the appropriate
  * locks to read/write the page.
- * 
+ *
  * @Threadsafe, all fields are final
  */
 public class BufferPool {
@@ -49,17 +49,17 @@ public class BufferPool {
     }
 
     public static int getPageSize() {
-      return pageSize;
+        return pageSize;
     }
 
     // THIS FUNCTION SHOULD ONLY BE USED FOR TESTING!!
     public static void setPageSize(int pageSize) {
-    	BufferPool.pageSize = pageSize;
+        BufferPool.pageSize = pageSize;
     }
 
     // THIS FUNCTION SHOULD ONLY BE USED FOR TESTING!!
     public static void resetPageSize() {
-    	BufferPool.pageSize = DEFAULT_PAGE_SIZE;
+        BufferPool.pageSize = DEFAULT_PAGE_SIZE;
     }
 
     /**
@@ -73,8 +73,8 @@ public class BufferPool {
      * space in the buffer pool, a page should be evicted and the new page
      * should be added in its place.
      *
-     * @param tid the ID of the transaction requesting the page
-     * @param pid the ID of the requested page
+     * @param tid  the ID of the transaction requesting the page
+     * @param pid  the ID of the requested page
      * @param perm the requested permissions on the page
      */
     public Page getPage(TransactionId tid, PageId pid, Permissions perm) throws TransactionAbortedException, DbException {
@@ -99,7 +99,7 @@ public class BufferPool {
             return p;
         } catch (NoSuchElementException | IndexOutOfBoundsException e)
         {
-        return null;
+            return null;
         }
     }
 
@@ -112,7 +112,7 @@ public class BufferPool {
      * @param tid the ID of the transaction requesting the unlock
      * @param pid the ID of the page to unlock
      */
-    public  void unsafeReleasePage(TransactionId tid, PageId pid) {
+    public void unsafeReleasePage(TransactionId tid, PageId pid) {
         // some code goes here
         // not necessary for lab1|lab2
         lockManager.releaseReadWriteLock(pid, tid);
@@ -141,11 +141,17 @@ public class BufferPool {
         return lockManager.hasLock(pid, tid);
     }
 
+    public Permissions whichLock(TransactionId tid, PageId pid) {
+        // some code goes here
+        // not necessary for lab1|lab2
+        return lockManager.whichLock(pid, tid);
+    }
+
     /**
      * Commit or abort a given transaction; release all locks associated to
      * the transaction.
      *
-     * @param tid the ID of the transaction requesting the unlock
+     * @param tid    the ID of the transaction requesting the unlock
      * @param commit a flag indicating whether we should commit or abort
      */
     public void transactionComplete(TransactionId tid, boolean commit) {
@@ -203,7 +209,7 @@ public class BufferPool {
     /**
      * Flush all dirty pages to disk.
      * NB: Be careful using this routine -- it writes dirty data to disk so will
-     *     break simpledb if running in NO STEAL mode.
+     * break simpledb if running in NO STEAL mode.
      */
     public synchronized void flushAllPages() throws IOException {
         // some code goes here
@@ -248,9 +254,10 @@ public class BufferPool {
         }
     }
 
-    /** Write all pages of the specified transaction to disk.
+    /**
+     * Write all pages of the specified transaction to disk.
      */
-    public synchronized  void flushPages(TransactionId tid) throws IOException {
+    public synchronized void flushPages(TransactionId tid) throws IOException {
         // some code goes here
         // not necessary for lab1|lab2
         lockManager.getPagesByTid(tid).forEach(pid -> {
@@ -272,7 +279,7 @@ public class BufferPool {
      * Discards a page from the buffer pool.
      * Flushes the page to disk to ensure dirty pages are updated on disk.
      */
-    private synchronized  void evictPage() throws DbException {
+    private synchronized void evictPage() throws DbException {
         // some code goes here
         // not necessary for lab1
         var pid = pagesManager.getLRUPage();
