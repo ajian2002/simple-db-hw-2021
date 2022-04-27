@@ -31,9 +31,10 @@ public class FakeReadWriteLock implements ReadWriteLock {
         StringBuilder sbr = new StringBuilder("{");
         rlist.forEach(e -> sbr.append(",").append(e.getId()));
         sbr.append("}");
-        StringBuilder sbw = new StringBuilder();
+
+        StringBuilder sbw = new StringBuilder("{");
         wlist.forEach(e -> sbw.append(",").append(e.getId()));
-        sbr.append("}");
+        sbw.append("}");
         return "{" + "r:" + rlist.size() + "w:" + wlist.size() + " " + (rlist.size() != 0 ? ("r=" + sbr) : "") + (wlist.size() != 0 ? "w=" + sbw : "") + '}';
     }
 
@@ -61,24 +62,32 @@ public class FakeReadWriteLock implements ReadWriteLock {
             }
             else
             {
-                ThreadLocal time = new ThreadLocal();
+                ThreadLocal<Long> time = new ThreadLocal<>();
                 time.set(System.currentTimeMillis());
                 var rt = (int) (Math.random() * RANDOMTIME);
+                var count = 1;
                 while (f.wlist.size() != 0)
                 {
+                    LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + "等待加读锁");
+                    if (System.currentTimeMillis() - time.get() > TIMEOUT)
+                    {
+                        LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + "加读锁失败,事务中断");
+                        throw new TransactionAbortedException();
+                    }
+                    else
+                    {
+                        LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":阻塞申请读锁:" + "失败" + count++);
+                    }
                     try
                     {
                         Thread.sleep(SLEEPTIME + rt);
-                        if (System.currentTimeMillis() - (Long) (time.get()) > TIMEOUT)
-                        {
-                            throw new TransactionAbortedException();
-                        }
                     } catch (InterruptedException e)
                     {
                         e.printStackTrace();
                     }
                 }
-                lock(tid);
+                f.rlist.add(tid);
+                LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + "加读锁成功");
             }
         }
 
@@ -134,6 +143,16 @@ public class FakeReadWriteLock implements ReadWriteLock {
                 var count = 1;
                 while (f.rlist.size() != 0 || f.wlist.size() != 0)
                 {
+                    LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + "等待加写锁");
+                    if (System.currentTimeMillis() - (Long) (time.get()) > TIMEOUT)
+                    {
+                        LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + "等待加写锁失败,事务中断");
+                        throw new TransactionAbortedException();
+                    }
+                    else
+                    {
+                        LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":阻塞申请写锁:" + "失败" + count++);
+                    }
                     try
                     {
                         Thread.sleep(SLEEPTIME + rt);
@@ -141,16 +160,9 @@ public class FakeReadWriteLock implements ReadWriteLock {
                     {
                         e.printStackTrace();
                     }
-                    if (System.currentTimeMillis() - (Long) (time.get()) > TIMEOUT)
-                    {
-                        throw new TransactionAbortedException();
-                    }
-                    else
-                    {
-                        LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":阻塞申请写锁:" + "失败" + count++);
-                    }
                 }
-                lock(tid);
+                f.wlist.add(tid);
+                LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + "加写锁成功");
             }
         }
 
