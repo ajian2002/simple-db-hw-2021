@@ -1,4 +1,7 @@
-package simpledb.transaction;
+package simpledb.transaction.Lock;
+
+import simpledb.transaction.TransactionAbortedException;
+import simpledb.transaction.TransactionId;
 
 public interface Lock {
     void lock(TransactionId tid) throws TransactionAbortedException;

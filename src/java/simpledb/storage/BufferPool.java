@@ -3,7 +3,7 @@ package simpledb.storage;
 import simpledb.common.Database;
 import simpledb.common.DbException;
 import simpledb.common.Permissions;
-import simpledb.transaction.LockManager;
+import simpledb.transaction.Lock.LockManager;
 import simpledb.transaction.TransactionAbortedException;
 import simpledb.transaction.TransactionId;
 
@@ -92,11 +92,11 @@ public class BufferPool {
         } catch (TransactionAbortedException e)
         {
             //            e.printStackTrace();
-            System.out.println("[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":事务中断");
-            transactionComplete(tid, false);
-            System.out.println("[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":事务中断,锁释放完成");
-
-            return null;
+            //            System.out.println("[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":事务中断");
+            throw e;
+            //            transactionComplete(tid, false);
+            //            System.out.println("[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":事务中断,锁释放完成");
+            //            return null;
         }
 
         // some code goes here

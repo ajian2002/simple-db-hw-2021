@@ -1,14 +1,18 @@
-package simpledb.transaction;
+package simpledb.transaction.Lock;
 
-import java.util.ArrayList;
+import simpledb.transaction.TransactionAbortedException;
+import simpledb.transaction.TransactionId;
+import simpledb.utils.LogPrint;
+
+import java.util.HashSet;
+import java.util.Set;
 
 public class FakeReadWriteLock implements ReadWriteLock {
-    private static final Long TIMEOUT = 3000L;
-    private final ArrayList<TransactionId> rlist = new ArrayList<>();
-    private final ArrayList<TransactionId> wlist = new ArrayList<>();
-    //    private final java.util.concurrent.locks.Lock l = new ReentrantLock();
-    //    private final java.util.concurrent.locks.Condition wNotZero = l.newCondition();
-    //    private final java.util.concurrent.locks.Condition rNotZero = l.newCondition();
+    private static final Long TIMEOUT = 500L;
+    private static final Long SLEEPTIME = 100L;
+    private static final Long RANDOMTIME = 10L;
+    private final Set<TransactionId> rlist = new HashSet<>();
+    private final Set<TransactionId> wlist = new HashSet<>();
     private final Lock r = new ReadLock(this);
     private final Lock w = new WriteLock(this);
 
@@ -53,24 +57,19 @@ public class FakeReadWriteLock implements ReadWriteLock {
             if (f.wlist.size() == 0)
             {
                 f.rlist.add(tid);
-                //                rNotZero.signal();
             }
             else
             {
-                //                l.lock();
-                //                try
-                //                {
                 ThreadLocal time = new ThreadLocal();
                 time.set(System.currentTimeMillis());
+                var rt = (int) (Math.random() * RANDOMTIME);
                 while (f.wlist.size() != 0)
                 {
                     try
                     {
-                        var rt = (int) (Math.random() * 10);
-                        Thread.sleep(300 + rt);
-                        if (System.currentTimeMillis() - (Long) (time.get()) > TIMEOUT + rt)
+                        Thread.sleep(SLEEPTIME + rt);
+                        if (System.currentTimeMillis() - (Long) (time.get()) > TIMEOUT)
                         {
-                            System.out.println("申请读锁失败,抛出异常 " + Thread.currentThread().getName());
                             throw new TransactionAbortedException();
                         }
                     } catch (InterruptedException e)
@@ -78,16 +77,7 @@ public class FakeReadWriteLock implements ReadWriteLock {
                         e.printStackTrace();
                     }
                 }
-
-                //                        wNotZero.await();
                 lock(tid);
-                //                } catch (InterruptedException e)
-                //                {
-                //                    e.printStackTrace();
-                //                } finally
-                //                {
-                //                    l.unlock();
-                //                }
             }
         }
 
@@ -129,48 +119,37 @@ public class FakeReadWriteLock implements ReadWriteLock {
 
             if (tid == null) return;
             if (f.wlist.contains(tid)) return;
-            if (f.rlist.contains(tid) && f.wlist.size() == 0)
-            {
-                f.rlist.remove(tid);
-                lock(tid);
-            }
+            if (f.rlist.contains(tid)) f.rlist.remove(tid);
             if (f.rlist.size() == 0 && f.wlist.size() == 0)
             {
                 f.wlist.add(tid);
-                //                wNotZero.signal();
+                //                LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":阻塞申请写锁:" + "成功");
             }
             else
             {
                 ThreadLocal time = new ThreadLocal();
                 time.set(System.currentTimeMillis());
-                //                l.lock();
-                //                try
-                //                {
+                var rt = (int) (Math.random() * RANDOMTIME);
+                var count = 1;
                 while (f.rlist.size() != 0 || f.wlist.size() != 0)
                 {
                     try
                     {
-                        var rt = (int) (Math.random() * 10);
-                        Thread.sleep(300 + rt);
-                        if (System.currentTimeMillis() - (Long) (time.get()) > TIMEOUT + rt)
-                        {
-                            throw new TransactionAbortedException();
-                        }
+                        Thread.sleep(SLEEPTIME + rt);
                     } catch (InterruptedException e)
                     {
                         e.printStackTrace();
                     }
+                    if (System.currentTimeMillis() - (Long) (time.get()) > TIMEOUT)
+                    {
+                        throw new TransactionAbortedException();
+                    }
+                    else
+                    {
+                        LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":阻塞申请写锁:" + "失败" + count++);
+                    }
                 }
-                ;
-                //                    rNotZero.await();
                 lock(tid);
-                //                } catch (InterruptedException e)
-                //                {
-                //                    e.printStackTrace();
-                //                } finally
-                //                {
-                //                    l.unlock();
-                //                }
             }
         }
 
@@ -178,14 +157,9 @@ public class FakeReadWriteLock implements ReadWriteLock {
         public synchronized boolean tryLock(TransactionId tid) throws TransactionAbortedException {
             if (tid == null) return false;
             if (f.wlist.contains(tid)) return true;
-            if (f.rlist.contains(tid) && f.wlist.size() == 0)
-            {
-                f.rlist.remove(tid);
-                return tryLock(tid);
-            }
+            if (f.rlist.contains(tid)) f.rlist.remove(tid);
             if (f.rlist.size() == 0 && f.wlist.size() == 0)
             {
-
                 lock(tid);
                 return true;
             }
