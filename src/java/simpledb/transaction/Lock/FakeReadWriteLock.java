@@ -1,3 +1,4 @@
+
 package simpledb.transaction.Lock;
 
 import simpledb.transaction.TransactionAbortedException;
@@ -31,9 +32,10 @@ public class FakeReadWriteLock implements ReadWriteLock {
         StringBuilder sbr = new StringBuilder("{");
         rlist.forEach(e -> sbr.append(",").append(e.getId()));
         sbr.append("}");
-        StringBuilder sbw = new StringBuilder();
+
+        StringBuilder sbw = new StringBuilder("{");
         wlist.forEach(e -> sbw.append(",").append(e.getId()));
-        sbr.append("}");
+        sbw.append("}");
         return "{" + "r:" + rlist.size() + "w:" + wlist.size() + " " + (rlist.size() != 0 ? ("r=" + sbr) : "") + (wlist.size() != 0 ? "w=" + sbw : "") + '}';
     }
 

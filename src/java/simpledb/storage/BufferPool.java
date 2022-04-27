@@ -6,6 +6,7 @@ import simpledb.common.Permissions;
 import simpledb.transaction.Lock.LockManager;
 import simpledb.transaction.TransactionAbortedException;
 import simpledb.transaction.TransactionId;
+import simpledb.utils.LogPrint;
 
 import java.io.IOException;
 import java.util.*;
@@ -77,7 +78,8 @@ public class BufferPool {
      * @param pid  the ID of the requested page
      * @param perm the requested permissions on the page
      */
-    public Page getPage(TransactionId tid, PageId pid, Permissions perm) throws TransactionAbortedException, DbException {
+    public synchronized Page getPage(TransactionId tid, PageId pid, Permissions perm) throws TransactionAbortedException, DbException {
+
         try
         {
             switch (perm)
@@ -91,15 +93,13 @@ public class BufferPool {
             }
         } catch (TransactionAbortedException e)
         {
-            //            e.printStackTrace();
-            //            System.out.println("[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":事务中断");
+            LogPrint.print("[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":事务中断");
             throw e;
             //            transactionComplete(tid, false);
             //            System.out.println("[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":事务中断,锁释放完成");
             //            return null;
         }
 
-        // some code goes here
         var page = pagesManager.get(pid);
         if (page != null) return page;
         try
@@ -123,9 +123,7 @@ public class BufferPool {
      * @param tid the ID of the transaction requesting the unlock
      * @param pid the ID of the page to unlock
      */
-    public void unsafeReleasePage(TransactionId tid, PageId pid) {
-        // some code goes here
-        // not necessary for lab1|lab2
+    public synchronized void unsafeReleasePage(TransactionId tid, PageId pid) {
         lockManager.releaseReadWriteLock(pid, tid);
     }
 
@@ -134,7 +132,7 @@ public class BufferPool {
      *
      * @param tid the ID of the transaction requesting the unlock
      */
-    public void transactionComplete(TransactionId tid) {
+    public synchronized void transactionComplete(TransactionId tid) {
         try
         {
             flushPages(tid);
@@ -145,7 +143,7 @@ public class BufferPool {
         lockManager.getPagesByTid(tid).forEach(pid -> {
             unsafeReleasePage(tid, pid);
         });
-
+        
     }
 
     /**
@@ -170,11 +168,13 @@ public class BufferPool {
      * @param tid    the ID of the transaction requesting the unlock
      * @param commit a flag indicating whether we should commit or abort
      */
-    public void transactionComplete(TransactionId tid, boolean commit) {
+    public synchronized void transactionComplete(TransactionId tid, boolean commit) {
         //        var pages = lockManager.getPagesByTid(tid);
         if (commit)
         {
             transactionComplete(tid);
+            LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":事务完成" + Arrays.toString(Thread.currentThread().getStackTrace()));
+
         }
         else
         {

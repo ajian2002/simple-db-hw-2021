@@ -1,5 +1,6 @@
 package simpledb.utils;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.logging.FileHandler;
 import java.util.logging.Level;
@@ -16,7 +17,13 @@ public class LogPrint {
         FileHandler fileHandler = null;
         try
         {
-            fileHandler = new FileHandler("/tmp/simple-db/java%u.log", false);
+            var f = new File("/tmp/simple-db/java%u.log");
+            var p = f.getParentFile();
+            if (!p.exists())
+            {
+                p.mkdirs();
+            }
+            fileHandler = new FileHandler(f.getAbsolutePath(), false);
         } catch (IOException e)
         {
             e.printStackTrace();
