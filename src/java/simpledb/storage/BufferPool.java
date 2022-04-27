@@ -345,25 +345,26 @@ public class BufferPool {
             return pa.page;
         }
 
-        public void put(Page page) {
+        public void put(Page page) throws DbException {
             if (page == null) return;
             var time = System.currentTimeMillis();
-            if (pages.size() == numPages)
-            {
-                try
-                {
-                    evictPage();
-                } catch (DbException e)
-                {
-                    e.printStackTrace();
-                }
-            }
+            if (pages.size() == numPages) evictPage();
             pages.put(page.getId(), new PageAndTime(time, page, page.getId()));
             times.put(time, page.getId());
         }
 
-        public void putAll(Collection<? extends Page> p) {
-            p.forEach(this::put);
+        public void putAll(Collection<? extends Page> p) throws DbException {
+            for (Page page : p)
+            {
+                try
+                {
+                    put(page);
+                } catch (DbException e)
+                {
+                    //                    throw e;
+                }
+            }
+
         }
 
         public void delete(PageId pageId) {

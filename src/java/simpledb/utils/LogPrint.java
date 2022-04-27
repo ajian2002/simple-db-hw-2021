@@ -33,7 +33,7 @@ public class LogPrint {
         logger.setUseParentHandlers(false);
     }
 
-    public static void print(String s) {
+    public synchronized static void print(String s) {
         if (FILE)
         {
             logger.info(s);

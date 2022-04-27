@@ -4,6 +4,7 @@ import simpledb.transaction.TransactionAbortedException;
 import simpledb.transaction.TransactionId;
 import simpledb.utils.LogPrint;
 
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -11,8 +12,8 @@ public class FakeReadWriteLock implements ReadWriteLock {
     private static final Long TIMEOUT = 500L;
     private static final Long SLEEPTIME = 100L;
     private static final Long RANDOMTIME = 10L;
-    private final Set<TransactionId> rlist = new HashSet<>();
-    private final Set<TransactionId> wlist = new HashSet<>();
+    private final Set<TransactionId> rlist = Collections.synchronizedSet(new HashSet<>());
+    private final Set<TransactionId> wlist = Collections.synchronizedSet(new HashSet<>());
     private final Lock r = new ReadLock(this);
     private final Lock w = new WriteLock(this);
 

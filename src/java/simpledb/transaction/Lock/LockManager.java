@@ -19,7 +19,7 @@ public class LockManager {
 
     private HashMap<PageId, Data> dataLockMap = new HashMap<PageId, Data>();
 
-    private Data getData(PageId pid) {
+    private synchronized Data getData(PageId pid) {
         if (dataLockMap.containsKey(pid))
         {
             return dataLockMap.get(pid);
@@ -29,11 +29,11 @@ public class LockManager {
         return data;
     }
 
-    private List<LockStatus> getLockStatus(PageId pid) {
+    private synchronized List<LockStatus> getLockStatus(PageId pid) {
         return getData(pid).getLists();
     }
 
-    public void getWriteLock(PageId pid, TransactionId tid) throws TransactionAbortedException {
+    public synchronized void getWriteLock(PageId pid, TransactionId tid) throws TransactionAbortedException {
         var data = getData(pid);
         var lockStatus = getLockStatus(pid);
         LockStatus temp = null;
@@ -65,7 +65,7 @@ public class LockManager {
         data.lists.set(data.lists.indexOf(temp), temp);
     }
 
-    public void getReadLock(PageId pid, TransactionId tid) throws TransactionAbortedException {
+    public synchronized void getReadLock(PageId pid, TransactionId tid) throws TransactionAbortedException {
         var data = getData(pid);
         LockStatus temp = null;
         boolean has = false;
@@ -101,7 +101,7 @@ public class LockManager {
         data.lists.set(data.lists.indexOf(temp), temp);
     }
 
-    public void releaseReadWriteLock(PageId pid, TransactionId tid) {
+    public synchronized void releaseReadWriteLock(PageId pid, TransactionId tid) {
         var data = getData(pid);
         var lockStatus = getLockStatus(pid);
         for (LockStatus ls : lockStatus)
@@ -125,7 +125,7 @@ public class LockManager {
         }
     }
 
-    public boolean hasLock(PageId pid, TransactionId tid) {
+    public synchronized boolean hasLock(PageId pid, TransactionId tid) {
         var data = getData(pid);
         var lockStatus = getLockStatus(pid);
         for (LockStatus ls : lockStatus)
@@ -139,7 +139,7 @@ public class LockManager {
         return false;
     }
 
-    public Permissions whichLock(PageId pid, TransactionId tid) {
+    public synchronized Permissions whichLock(PageId pid, TransactionId tid) {
         if (hasLock(pid, tid))
         {
             var data = getData(pid);
@@ -159,7 +159,7 @@ public class LockManager {
         return null;
     }
 
-    public List<PageId> getPagesByTid(TransactionId tid) {
+    public synchronized List<PageId> getPagesByTid(TransactionId tid) {
         List<PageId> pages = new ArrayList<PageId>();
         dataLockMap.values().forEach(e -> {
             e.getLists().forEach(ee -> {
@@ -169,7 +169,7 @@ public class LockManager {
         return pages;
     }
 
-    private void BlockLock(LockManager.Data data, TransactionId tid, LockStatus temp, String s, boolean write) throws TransactionAbortedException {
+    private synchronized void BlockLock(LockManager.Data data, TransactionId tid, LockStatus temp, String s, boolean write) throws TransactionAbortedException {
         if (!temp.gettedLock)
         {
             try
@@ -194,7 +194,7 @@ public class LockManager {
         }
     }
 
-    private void TryLock(LockManager.Data data, TransactionId tid, LockStatus temp, String s, boolean write) throws TransactionAbortedException {
+    private synchronized void TryLock(LockManager.Data data, TransactionId tid, LockStatus temp, String s, boolean write) throws TransactionAbortedException {
         LogPrint.print(s);
         if (write)
         {
@@ -208,7 +208,7 @@ public class LockManager {
         }
     }
 
-    private LockStatus NewLock(LockManager.Data data, TransactionId tid, LockStatus temp, String s, boolean write) throws TransactionAbortedException {
+    private synchronized LockStatus NewLock(LockManager.Data data, TransactionId tid, LockStatus temp, String s, boolean write) throws TransactionAbortedException {
         LogPrint.print(s);
         temp = new LockStatus(tid, data);
         if (write)
