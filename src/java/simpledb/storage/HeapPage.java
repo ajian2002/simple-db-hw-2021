@@ -414,7 +414,7 @@ public class HeapPage implements Page {
 
             @Override
             public Tuple next() {
-                return tuples[index++];
+                return hasNext() ? tuples[index++] : null;
             }
         };
     }

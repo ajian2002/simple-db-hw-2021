@@ -110,7 +110,8 @@ public class LockManager {
                     try
                     {
                         ls.lock.unlock(tid);
-                        LogPrint.print("[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":释放" + (ls.gettedLock && ls.isReadLock ? "读锁" : ls.gettedLock && ls.isWriteLock ? "写锁" : "未知锁") + Arrays.toString(Thread.currentThread().getStackTrace()));
+                        LogPrint.print("[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":释放" + (ls.gettedLock && ls.isReadLock ? "读锁" : ls.gettedLock && ls.isWriteLock ? "写锁" : "未知锁"));
+                        //                        + Arrays.toString(Thread.currentThread().getStackTrace())
                     } catch (Exception e)
                     {
                         e.printStackTrace();

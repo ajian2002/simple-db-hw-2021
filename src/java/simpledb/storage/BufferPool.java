@@ -10,6 +10,7 @@ import simpledb.utils.LogPrint;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 /**
@@ -173,7 +174,8 @@ public class BufferPool {
         if (commit)
         {
             transactionComplete(tid);
-            LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":事务完成" + Arrays.toString(Thread.currentThread().getStackTrace()));
+            LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":事务完成");
+            //            + Arrays.toString(Thread.currentThread().getStackTrace()
 
         }
         else
@@ -285,13 +287,16 @@ public class BufferPool {
      * Write all pages of the specified transaction to disk.
      */
     public synchronized void flushPages(TransactionId tid) throws IOException {
-        lockManager.getPagesByTid(tid).forEach(pid -> {
+        var values = lockManager.getPagesByTid(tid);
+        for (PageId pid : values)
+        {
             try
             {
-                if (pid == null) return;
+                if (pid == null) continue;
                 var p = pagesManager.get(pid);
-                if (p == null) return;
+                if (p == null) continue;
                 // 脏
+                LogPrint.print("[" + "pn=" + p.getId().getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + " 事物关联页" + p.getId().getPageNumber() + " " + ((p.isDirty() != null) ? "脏" : "不脏"));
                 if (p.isDirty() != null)
                 {
                     flushPage(pid);
@@ -300,7 +305,8 @@ public class BufferPool {
             {
                 e.printStackTrace();
             }
-        });
+        }
+
     }
 
     /**
@@ -389,17 +395,17 @@ public class BufferPool {
         public PageId getLRUPage() {
             //            System.out.println("LRU First page: " + times.firstKey());
             //            System.out.println("LRU Last page: " + times.lastKey());
-            var enty = times.firstEntry();
-            if (enty == null) return null;
-            return enty.getValue();
+            //            var enty = times.firstEntry();
+            //            if (enty == null) return null;
+            //            return enty.getValue();
+            return null;
         }
 
-        public PageId getNotDirtyLRUPage() throws DbException {
+       public PageId getNotDirtyLRUPage() throws DbException {
             boolean allDirty = false;
-            var it = pages.values().iterator();
-            while (it.hasNext())
+            for (PageAndTime pageAndTime : pages.values())
             {
-                PageId e = it.next().id;
+                PageId e = pageAndTime.id;
                 if (pages.get(e).page.isDirty() == null) return e;
                 allDirty = true;
             }
