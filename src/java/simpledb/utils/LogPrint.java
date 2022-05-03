@@ -1,16 +1,18 @@
 package simpledb.utils;
 
+
 import java.io.File;
 import java.io.IOException;
-import java.util.logging.FileHandler;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-import java.util.logging.SimpleFormatter;
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.util.logging.*;
 
 public class LogPrint {
     static final Logger logger = Logger.getLogger("root");
     static String s;
-    static boolean FILE = true;
+    static int FILE = 1;
 
     static
     {
@@ -30,8 +32,46 @@ public class LogPrint {
         }
         //创建一个SimpleFormatter，输出格式
         SimpleFormatter formatter = new SimpleFormatter();
+        Formatter fff = new Formatter() {
+            static String getLoggingProperty(String name) {
+                return LogManager.getLogManager().getProperty(name);
+            }
+
+            private final String format = "[%1$tl:%1$tM:%1$tS.%1$tN][%2$s]: %4$s: %5$s%6$s%n";
+
+            @Override
+            public String format(LogRecord record) {
+                ZonedDateTime zdt = ZonedDateTime.ofInstant(record.getInstant(), ZoneId.systemDefault());
+                String source;
+                if (record.getSourceClassName() != null)
+                {
+                    source = record.getSourceClassName();
+                    if (record.getSourceMethodName() != null)
+                    {
+                        source += " " + record.getSourceMethodName();
+                    }
+                }
+                else
+                {
+                    source = record.getLoggerName();
+                }
+                String message = formatMessage(record);
+                String throwable = "";
+                if (record.getThrown() != null)
+                {
+                    StringWriter sw = new StringWriter();
+                    PrintWriter pw = new PrintWriter(sw);
+                    pw.println();
+                    record.getThrown().printStackTrace(pw);
+                    pw.close();
+                    throwable = sw.toString();
+                }
+                return String.format(format, zdt, source, record.getLoggerName(), record.getLevel().getLocalizedName(), message, throwable);
+
+            }
+        };
         //设置formatter
-        fileHandler.setFormatter(formatter);
+        fileHandler.setFormatter(fff);
         //设置日志级别
         fileHandler.setLevel(Level.ALL);
         //把handler添加到logger
@@ -41,13 +81,21 @@ public class LogPrint {
     }
 
     public synchronized static void print(String s) {
-        if (FILE)
+        print(FILE, s);
+    }
+
+    public synchronized static void print(int flag, String s) {
+        if (flag == 1)
         {
             logger.info(s);
         }
-        else
+        else if (flag == 2)
         {
             System.out.println(s);
+        }
+        else
+        {
+            ;
         }
     }
 }
