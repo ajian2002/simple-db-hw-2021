@@ -96,7 +96,7 @@ public class TransactionTest extends SimpleDbTestBase {
             try {
                 // Try to increment the value until we manage to successfully commit
                 while (true) {
-                    int a, b, c;
+                    // int a, b, c;
                     // Wait for all threads to be ready
                     latch.await();
                     Transaction tr = new Transaction();
@@ -146,16 +146,16 @@ public class TransactionTest extends SimpleDbTestBase {
                         q3.close();
                         tr.commit();
                         LogPrint.print("---[" + "tid=" + tr.getId().getId() % 100 + "]" + Thread.currentThread().getName() + "    after-ok   " + t.getField(0));
-                        b = Integer.parseInt(t.getField(0).toString());
-                        tr.start();
-                        ss1 = new SeqScan(tr.getId(), tableId, "");
-                        q1 = new Query(ss1, tr.getId());
-                        q1.start();
-                        tup = q1.next();
-                        intf = (IntField) tup.getField(0);
-                        i = intf.getValue();
-                        tr.commit();
-                        LogPrint.print(1, "---[" + "tid=" + tr.getId().getId() % 100 + "]" + Thread.currentThread().getName() + "    again   " + i);
+                        // b = Integer.parseInt(t.getField(0).toString());
+                        // tr.start();
+                        // ss1 = new SeqScan(tr.getId(), tableId, "");
+                        // q1 = new Query(ss1, tr.getId());
+                        // q1.start();
+                        // tup = q1.next();
+                        // intf = (IntField) tup.getField(0);
+                        // i = intf.getValue();
+                        // tr.commit();
+                        // LogPrint.print(1, "---[" + "tid=" + tr.getId().getId() % 100 + "]" + Thread.currentThread().getName() + "    again   " + i);
                         //                        try
                         //                        {
                         //                            assertEquals(b, i);

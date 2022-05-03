@@ -102,6 +102,10 @@ public class BufferPool {
             //            return null;
         }
 
+        return justGetPage(pid);
+    }
+
+    private Page justGetPage(PageId pid) throws DbException {
         var page = pagesManager.get(pid);
         if (page != null) return page;
         try
@@ -288,7 +292,14 @@ public class BufferPool {
             try
             {
                 var p = pagesManager.get(pid);
-                assertNotNull("p 没了", p);
+
+                //                assertNotNull("p 没了", p);
+                if (p == null)
+                {
+                    LogPrint.print("p没了");
+                    continue;
+                }
+
                 // 脏
                 LogPrint.print("[" + "pn=" + p.getId().getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + " 事物关联页" + p.getId().getPageNumber() + " " + ((p.isDirty() != null) ? "脏" : "不脏"));
                 if (p.isDirty() != null)
