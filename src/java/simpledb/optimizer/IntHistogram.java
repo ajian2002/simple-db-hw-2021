@@ -54,9 +54,9 @@ public class IntHistogram implements Histogram<Integer> {
         {
             lists.get(index).add(v);
             sum++;
-        } catch (Exception ignored)
+        } catch (Exception e)
         {
-
+            e.printStackTrace();
         }
     }
 
@@ -88,8 +88,9 @@ public class IntHistogram implements Histogram<Integer> {
                         double b_r = (min + (1 + index) * range - v) / range;
                         cost += b_f * b_r;
                     }
-                } catch (Exception ignored)
+                } catch (Exception e)
                 {
+                    e.printStackTrace();
                 }
 
             }
@@ -124,8 +125,9 @@ public class IntHistogram implements Histogram<Integer> {
                         double b_r = (v - (min + index * range)) / range;
                         cost += b_f * b_r;
                     }
-                } catch (Exception ignored)
+                } catch (Exception e)
                 {
+                    e.printStackTrace();
                 }
             }
             case GREATER_THAN_OR_EQ -> {
