@@ -78,7 +78,7 @@ public class BufferPool {
      * @param pid  the ID of the requested page
      * @param perm the requested permissions on the page
      */
-    public synchronized Page getPage(TransactionId tid, PageId pid, Permissions perm) throws TransactionAbortedException, DbException {
+    public Page getPage(TransactionId tid, PageId pid, Permissions perm) throws TransactionAbortedException, DbException {
 
         try
         {
@@ -110,6 +110,7 @@ public class BufferPool {
             return p;
         } catch (NoSuchElementException | IndexOutOfBoundsException e)
         {
+            e.printStackTrace();
             return null;
         }
     }
@@ -132,7 +133,7 @@ public class BufferPool {
      *
      * @param tid the ID of the transaction requesting the unlock
      */
-    public synchronized void transactionComplete(TransactionId tid) {
+    public void transactionComplete(TransactionId tid) {
         try
         {
             flushPages(tid);
@@ -150,14 +151,10 @@ public class BufferPool {
      * Return true if the specified transaction has a lock on the specified page
      */
     public boolean holdsLock(TransactionId tid, PageId pid) {
-        // some code goes here
-        // not necessary for lab1|lab2
         return lockManager.hasLock(pid, tid);
     }
 
     public Permissions whichLock(TransactionId tid, PageId pid) {
-        // some code goes here
-        // not necessary for lab1|lab2
         return lockManager.whichLock(pid, tid);
     }
 
@@ -169,20 +166,16 @@ public class BufferPool {
      * @param commit a flag indicating whether we should commit or abort
      */
     public synchronized void transactionComplete(TransactionId tid, boolean commit) {
-        //        var pages = lockManager.getPagesByTid(tid);
         if (commit)
         {
             transactionComplete(tid);
             LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":事务完成");
             //            + Arrays.toString(Thread.currentThread().getStackTrace()
-
         }
         else
         {
             //恢复脏页面
-            lockManager.getPagesByTid(tid).forEach(pid -> {
-                discardPage(pid);
-            });
+            lockManager.getPagesByTid(tid).forEach(this::discardPage);
             //放锁
             lockManager.getPagesByTid(tid).forEach(pid -> {
                 unsafeReleasePage(tid, pid);
@@ -321,7 +314,6 @@ public class BufferPool {
             //不脏
             flushPage(pid);
             discardPage(pid);
-
         } catch (IOException e)
         {
             e.printStackTrace();
@@ -340,7 +332,7 @@ public class BufferPool {
             pages = Collections.synchronizedMap(new HashMap<>(numPages));
         }
 
-        public Page get(PageId pid) {
+        public synchronized Page get(PageId pid) {
             if (pid == null) return null;
             var pa = pages.get(pid);
             if (pa == null) return null;
@@ -350,10 +342,10 @@ public class BufferPool {
             return pa.page;
         }
 
-        public void put(Page page) throws DbException {
+        public synchronized void put(Page page) throws DbException {
             if (page == null) return;
             var time = System.currentTimeMillis();
-            if (pages.size() == numPages) evictPage();
+            if (!pages.containsKey(page.getId())) if (pages.size() == numPages) evictPage();
             pages.put(page.getId(), new PageAndTime(time, page, page.getId()));
             times.put(time, page.getId());
         }
@@ -361,32 +353,23 @@ public class BufferPool {
         public void putAll(Collection<? extends Page> p) throws DbException {
             for (Page page : p)
             {
-                try
-                {
                 put(page);
-                } catch (DbException e)
-                {
-                    //                    throw e;
-                }
             }
-
         }
 
-        public void delete(PageId pageId) {
+        public synchronized void delete(PageId pageId) {
             var pa = pages.get(pageId);
             if (pa == null) return;
             times.remove(pa.time);
             pages.remove(pageId);
         }
 
-        public void forEachPageId(Consumer<PageId> action) {
-            //            assertNotNull(action);
+        public synchronized void forEachPageId(Consumer<PageId> action) {
             if (action == null) return;
             pages.keySet().forEach(action);
         }
 
-        public void forEachPageAndTime(Consumer<PageAndTime> action) {
-            //            assertNotNull(action);
+        public synchronized void forEachPageAndTime(Consumer<PageAndTime> action) {
             if (action == null) return;
             pages.values().forEach(action);
         }
@@ -400,7 +383,7 @@ public class BufferPool {
             return null;
         }
 
-       public PageId getNotDirtyLRUPage() throws DbException {
+        public synchronized PageId getNotDirtyLRUPage() throws DbException {
             boolean allDirty = false;
             for (PageAndTime pageAndTime : pages.values())
             {
