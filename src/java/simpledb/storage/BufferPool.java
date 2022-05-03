@@ -10,7 +10,6 @@ import simpledb.utils.LogPrint;
 
 import java.io.IOException;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 /**
@@ -36,8 +35,8 @@ public class BufferPool {
      */
     private static final int DEFAULT_PAGE_SIZE = 4096;
     private static int pageSize = DEFAULT_PAGE_SIZE;
-    private final LockManager lockManager = new LockManager();
-    private final PagesManager pagesManager;
+    private LockManager lockManager;
+    private PagesManager pagesManager;
     ;
 
     /**
@@ -46,7 +45,7 @@ public class BufferPool {
      * @param numPages maximum number of pages in this buffer pool.
      */
     public BufferPool(int numPages) {
-        // some code goes here
+        lockManager = new LockManager();
         pagesManager = new PagesManager(numPages);
     }
 
@@ -144,7 +143,7 @@ public class BufferPool {
         lockManager.getPagesByTid(tid).forEach(pid -> {
             unsafeReleasePage(tid, pid);
         });
-        
+
     }
 
     /**
@@ -331,14 +330,14 @@ public class BufferPool {
 
     private class PagesManager {
 
-        private HashMap<PageId, PageAndTime> pages;
-        private TreeMap<Long, PageId> times;
+        private Map<PageId, PageAndTime> pages;
+        private Map<Long, PageId> times;
         private int numPages;
 
         public PagesManager(int numPages) {
             this.numPages = numPages;
             times = new TreeMap<>(Comparator.naturalOrder());
-            pages = new HashMap<>(numPages);
+            pages = Collections.synchronizedMap(new HashMap<>(numPages));
         }
 
         public Page get(PageId pid) {
@@ -364,7 +363,7 @@ public class BufferPool {
             {
                 try
                 {
-                    put(page);
+                put(page);
                 } catch (DbException e)
                 {
                     //                    throw e;

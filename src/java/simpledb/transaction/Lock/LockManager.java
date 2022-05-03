@@ -14,7 +14,7 @@ import java.util.*;
 public class LockManager {
 
 
-    private HashMap<PageId, Data> dataLockMap = new HashMap<PageId, Data>();
+    private final Map<PageId, Data> dataLockMap = Collections.synchronizedMap(new HashMap<PageId, Data>());
 
     private synchronized Data getData(PageId pid) {
         if (dataLockMap.containsKey(pid))
