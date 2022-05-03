@@ -12,6 +12,8 @@ import java.io.IOException;
 import java.util.*;
 import java.util.function.Consumer;
 
+import static org.junit.Assert.assertNotNull;
+
 /**
  * BufferPool manages the reading and writing of pages into memory from
  * disk. Access methods call into it to retrieve pages, and it fetches
@@ -232,12 +234,12 @@ public class BufferPool {
      * NB: Be careful using this routine -- it writes dirty data to disk so will
      * break simpledb if running in NO STEAL mode.
      */
-    public synchronized void flushAllPages() throws IOException {
+    public void flushAllPages() throws IOException {
         // some code goes here
         pagesManager.forEachPageId(pid -> {
             try
             {
-                if (Objects.requireNonNull(pagesManager.get(pid)).isDirty() != null)
+                if (pagesManager.get(pid).isDirty() != null)
                 {
                     flushPage(pid);
                 }
@@ -257,7 +259,7 @@ public class BufferPool {
      * Also used by B+ tree files to ensure that deleted pages
      * are removed from the cache so they can be reused safely
      */
-    public synchronized void discardPage(PageId pid) {
+    public void discardPage(PageId pid) {
         pagesManager.delete(pid);
     }
 
@@ -266,7 +268,7 @@ public class BufferPool {
      *
      * @param pid an ID indicating the page to flush
      */
-    private synchronized void flushPage(PageId pid) throws IOException {
+    private void flushPage(PageId pid) throws IOException {
         var page = pagesManager.get(pid);
         if (page != null)
         {
@@ -278,15 +280,15 @@ public class BufferPool {
     /**
      * Write all pages of the specified transaction to disk.
      */
-    public synchronized void flushPages(TransactionId tid) throws IOException {
+    public void flushPages(TransactionId tid) throws IOException {
         var values = lockManager.getPagesByTid(tid);
+        //        LogPrint.print("[" + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + "size=" + values.size());
         for (PageId pid : values)
         {
             try
             {
-                if (pid == null) continue;
                 var p = pagesManager.get(pid);
-                if (p == null) continue;
+                assertNotNull("p 没了", p);
                 // 脏
                 LogPrint.print("[" + "pn=" + p.getId().getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + " 事物关联页" + p.getId().getPageNumber() + " " + ((p.isDirty() != null) ? "脏" : "不脏"));
                 if (p.isDirty() != null)
@@ -322,9 +324,9 @@ public class BufferPool {
 
     private class PagesManager {
 
-        private Map<PageId, PageAndTime> pages;
-        private Map<Long, PageId> times;
-        private int numPages;
+        private final Map<PageId, PageAndTime> pages;
+        private final Map<Long, PageId> times;
+        private final int numPages;
 
         public PagesManager(int numPages) {
             this.numPages = numPages;

@@ -37,7 +37,8 @@ public class LogPrint {
                 return LogManager.getLogManager().getProperty(name);
             }
 
-            private final String format = "[%1$tl:%1$tM:%1$tS.%1$tN][%2$s]: %4$s: %5$s%6$s%n";
+//            private final String format = "[%1$tl:%1$tM:%1$tS.%1$tN][%2$s]: %4$s: %5$s%6$s%n";
+private final String format = "%5$s%6$s%n";
 
             @Override
             public String format(LogRecord record) {

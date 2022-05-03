@@ -137,7 +137,6 @@ public class SeqScan implements OpIterator {
 
     public Tuple next() throws NoSuchElementException, TransactionAbortedException, DbException {
         if (!open) throw new IllegalStateException("Scan not open");
-        // some code goes here
         return tablefileIterator.next();
     }
 
