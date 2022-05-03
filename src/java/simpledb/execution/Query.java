@@ -89,7 +89,6 @@ public class Query implements Serializable {
             TransactionAbortedException {
         if (!started)
             throw new DbException("Database not started.");
-            
         return op.next();
     }
 

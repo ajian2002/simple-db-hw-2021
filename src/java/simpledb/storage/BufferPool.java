@@ -12,6 +12,8 @@ import java.io.IOException;
 import java.util.*;
 import java.util.function.Consumer;
 
+import static org.junit.Assert.assertNotNull;
+
 /**
  * BufferPool manages the reading and writing of pages into memory from
  * disk. Access methods call into it to retrieve pages, and it fetches
@@ -286,11 +288,7 @@ public class BufferPool {
             try
             {
                 var p = pagesManager.get(pid);
-                if (p == null)
-                {
-                    LogPrint.print("p 没了");
-                    continue;
-                }
+                assertNotNull("p 没了", p);
                 // 脏
                 LogPrint.print("[" + "pn=" + p.getId().getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + " 事物关联页" + p.getId().getPageNumber() + " " + ((p.isDirty() != null) ? "脏" : "不脏"));
                 if (p.isDirty() != null)

@@ -161,7 +161,7 @@ public class LockManager {
         List<PageId> pages = new ArrayList<PageId>();
         dataLockMap.values().forEach(e -> {
             e.getLists().forEach(ee -> {
-                if (ee.tid.equals(tid)) pages.add(e.getPid());
+                if (ee.tid.equals(tid) && ee.gettedLock) pages.add(e.getPid());
             });
         });
         return pages;
