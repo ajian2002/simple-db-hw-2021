@@ -81,6 +81,18 @@ public class BufferPool {
      * @param perm the requested permissions on the page
      */
     public Page getPage(TransactionId tid, PageId pid, Permissions perm) throws TransactionAbortedException, DbException {
+        Page page = pagesManager.get(pid);
+        if (page == null)
+        {
+            DbFile f = Database.getCatalog().getDatabaseFile(pid.getTableId());
+            page = f.readPage(pid);
+            if (page != null) pagesManager.put(page);
+            else
+            {
+                System.out.println("pid=" + pid.getTableId() + ":" + pid.getPageNumber());
+                return null;
+            }
+        }
 
         try
         {
@@ -99,22 +111,8 @@ public class BufferPool {
             throw e;
             //            transactionComplete(tid, false);
             //            System.out.println("[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":事务中断,锁释放完成");
-            //            return null;
         }
-
-        var page = pagesManager.get(pid);
-        if (page != null) return page;
-        try
-        {
-            var f = Database.getCatalog().getDatabaseFile(pid.getTableId());
-            var p = f.readPage(pid);
-            if (p != null) pagesManager.put(p);
-            return p;
-        } catch (NoSuchElementException | IndexOutOfBoundsException e)
-        {
-            e.printStackTrace();
-            return null;
-        }
+        return page;
     }
 
     /**
