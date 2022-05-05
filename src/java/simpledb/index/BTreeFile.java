@@ -1,17 +1,17 @@
 package simpledb.index;
 
-import java.io.*;
-import java.util.*;
-
 import simpledb.common.Database;
+import simpledb.common.DbException;
+import simpledb.common.Debug;
 import simpledb.common.Permissions;
 import simpledb.execution.IndexPredicate;
 import simpledb.execution.Predicate.Op;
-import simpledb.common.DbException;
-import simpledb.common.Debug;
 import simpledb.storage.*;
 import simpledb.transaction.TransactionAbortedException;
 import simpledb.transaction.TransactionId;
+
+import java.io.*;
+import java.util.*;
 
 /**
  * BTreeFile is an implementation of a DbFile that stores a B+ tree.
@@ -184,17 +184,79 @@ public class BTreeFile implements DbFile {
 	 * @return the left-most leaf page possibly containing the key field f
 	 * 
 	 */
-	private BTreeLeafPage findLeafPage(TransactionId tid, Map<PageId, Page> dirtypages, BTreePageId pid, Permissions perm,
-                                       Field f)
-					throws DbException, TransactionAbortedException {
-		// some code goes here
-        return null;
+    private BTreeLeafPage findLeafPage(TransactionId tid, Map<PageId, Page> dirtypages, BTreePageId pid, Permissions perm, Field f) throws DbException, TransactionAbortedException {
+        //        if (pid == null) return null;
+        var oldp = getPage(tid, dirtypages, pid, perm);
+        if (oldp == null) return null;
+        if (!(oldp instanceof BTreePage)) throw new DbException("not Btree Page");
+        BTreeLeafPage result = null;
+        //        System.out.println(BTreePageId.categToString(pid.pgcateg()) + " " + "find=" + f + " ");
+        if (BTreePageId.categToString(pid.pgcateg()).equals("LEAF"))
+        {
+            BTreeLeafPage temp = (BTreeLeafPage) oldp;
+            return temp;
+
+            //            if (f == null)
+            //            {
+            //                result = temp;
+            //                return result;
+            //            }
+            //            var it = temp.iterator();
+            //            while (it.hasNext())
+            //            {
+            //                var t = it.next();
+            //                var itt = t.fields();
+            //                while (itt.hasNext())
+            //                {
+            //                    var current = itt.next();
+            //                    //                    System.out.print("  current=" + current);
+            //                    if (f.compare(Op.EQUALS, current))
+            //                    {
+            //                        //                        System.out.println("");
+            //                        return temp;
+            //                    }
+            //                }
+            //            }
+            //            System.out.println("temp=" + temp);
+            //            System.out.println("leaf中未找到");
+            //            return temp;
+            //            var rpid = temp.getRightSiblingId();
+            //            return findLeafPage(tid, dirtypages, rpid, perm, f);
+
+        }
+        else if (BTreePageId.categToString(pid.pgcateg()).equals("INTERNAL"))
+        {
+            BTreeInternalPage temp = (BTreeInternalPage) oldp;
+            var it = temp.iterator();
+            BTreeEntry entry = null;
+            if (f == null)
+            {
+                if (it.hasNext())
+                {
+                    entry = it.next();
+                    return findLeafPage(tid, dirtypages, entry.getLeftChild(), perm, f);
+                }
+                else throw new DbException("internal page 无数据");
+            }
+            else
+            {
+                while (it.hasNext())
+                {
+                    entry = it.next();
+                    var current = entry.getKey();
+                    if (f.equals(current) || f.compare(Op.LESS_THAN_OR_EQ, current))
+                        return findLeafPage(tid, dirtypages, entry.getLeftChild(), perm, f);
+                }
+                if (entry == null) throw new DbException("internal page 无数据");
+                else return findLeafPage(tid, dirtypages, entry.getRightChild(), perm, f);
+            }
+        }
+        else throw new DbException("page type" + BTreePageId.categToString(pid.pgcateg()));
 	}
 	
 	/**
 	 * Convenience method to find a leaf page when there is no dirtypages HashMap.
 	 * Used by the BTreeFile iterator.
-	 * @see #findLeafPage(TransactionId, Map, BTreePageId, Permissions, Field)
 	 * 
 	 * @param tid - the transaction id
 	 * @param pid - the current page being searched
@@ -229,17 +291,72 @@ public class BTreeFile implements DbFile {
 	 * @throws IOException
 	 * @throws TransactionAbortedException
 	 */
-	public BTreeLeafPage splitLeafPage(TransactionId tid, Map<PageId, Page> dirtypages, BTreeLeafPage page, Field field)
-			throws DbException, IOException, TransactionAbortedException {
-		// some code goes here
-        //
-        // Split the leaf page by adding a new page on the right of the existing
-		// page and moving half of the tuples to the new page.  Copy the middle key up
-		// into the parent page, and recursively split the parent as needed to accommodate
-		// the new entry.  getParentWithEmtpySlots() will be useful here.  Don't forget to update
-		// the sibling pointers of all the affected leaf pages.  Return the page into which a 
-		// tuple with the given key field should be inserted.
-        return null;
+    public BTreeLeafPage splitLeafPage(TransactionId tid, Map<PageId, Page> dirtypages, BTreeLeafPage page, Field field) throws DbException, IOException, TransactionAbortedException {
+
+        //        通过在现有页面的右侧添加一个新页面来拆分叶子页面
+        //         页面并将一半的元组移动到新页面。向上复制中间键
+        //         进入父页面，并根据需要递归拆分父页面以适应
+        //         新条目。 getParentWithEmtpySlots() 在这里很有用。别忘了更新
+        //         所有受影响叶页的兄弟指针。返回 a 进入的页面
+        //         应插入具有给定键字段的元组。
+        var currentPage = page;
+        BTreeLeafPage newPage = (BTreeLeafPage) getEmptyPage(tid, dirtypages, BTreePageId.LEAF);
+        var oldit = currentPage.reverseIterator();
+        int movecount = currentPage.getNumTuples() / 2;
+        var deletList = new ArrayList<Tuple>();
+        while (oldit.hasNext())
+        {
+            if (movecount <= 0) break;
+            movecount--;
+            var t = oldit.next();
+            deletList.add(t);
+        }
+        deletList.forEach(t -> {
+            try
+            {
+                currentPage.deleteTuple(t);
+                newPage.insertTuple(t);
+            } catch (DbException e)
+            {
+                e.printStackTrace();
+            }
+        });
+
+
+        Field keyField = null;
+        Tuple firstTuple = null;
+        var pp = newPage.iterator();
+        if (pp.hasNext())
+        {
+            firstTuple = pp.next();
+        }
+        else throw new DbException("newPage is empty");
+
+        var newParent = getParentWithEmptySlots(tid, dirtypages, page.getParentId(), firstTuple.getField(keyField()));
+        newParent.insertEntry(new BTreeEntry(firstTuple.getField(keyField()), currentPage.getId(), newPage.getId()));
+        //        newParent.insertEntry(new BTreeEntry(firstTuple.getField(keyField()), currentPage.getId(), newPage.getId()));
+
+        BTreeLeafPage rr = currentPage.getRightSiblingId() == null ? null : (BTreeLeafPage) getPage(tid, dirtypages, currentPage.getRightSiblingId(), Permissions.READ_WRITE);
+        newPage.setLeftSiblingId(currentPage.getId());
+        newPage.setRightSiblingId(rr != null ? rr.getId() : null);
+        newPage.setParentId(newParent.getId());
+        if (rr != null)
+        {
+            rr.setLeftSiblingId(newPage.getId());
+            rr.setParentId(newParent.getId());
+        }
+
+        currentPage.setRightSiblingId(newPage.getId());
+        currentPage.setParentId(newParent.getId());
+        newPage.markDirty(true, tid);
+        newParent.markDirty(true, tid);
+        currentPage.markDirty(true, tid);
+        dirtypages.put(newPage.getId(), newPage);
+        dirtypages.put(newParent.getId(), newParent);
+        dirtypages.put(currentPage.getId(), currentPage);
+
+        if (field.compare(Op.LESS_THAN_OR_EQ, firstTuple.getField(keyField()))) return currentPage;
+        else return newPage;
 		
 	}
 	
@@ -265,19 +382,74 @@ public class BTreeFile implements DbFile {
 	 * @throws IOException
 	 * @throws TransactionAbortedException
 	 */
-	public BTreeInternalPage splitInternalPage(TransactionId tid, Map<PageId, Page> dirtypages,
-			BTreeInternalPage page, Field field) 
-					throws DbException, IOException, TransactionAbortedException {
-		// some code goes here
+    public BTreeInternalPage splitInternalPage(TransactionId tid, Map<PageId, Page> dirtypages, BTreeInternalPage page, Field field) throws DbException, IOException, TransactionAbortedException {
+        //          通过在现有页面的右侧添加新页面来拆分内部页面
+        //         页面并将一半条目移动到新页面。向上推中间键
+        //         进入父页面，并根据需要递归拆分父页面以适应
+        //         新条目。 getParentWithEmtpySlots() 在这里很有用。别忘了更新
+        //         所有子移动到新页面的父指针。更新父指针（）
+        //         在这里会有用。返回具有给定键字段的条目所在的页面
+        //         应该插入。
+
+        var currentPage = page;
+        BTreeInternalPage newPage = (BTreeInternalPage) getEmptyPage(tid, dirtypages, BTreePageId.INTERNAL);
+        var oldit = currentPage.reverseIterator();
+        int movecount = currentPage.getNumEntries() / 2 + 1;
+        var deletList = new ArrayList<BTreeEntry>();
+        while (oldit.hasNext())
+        {
+            if (movecount <= 0) break;
+            movecount--;
+            var t = oldit.next();
+            deletList.add(t);
+        }
+        deletList.forEach(t -> {
+            try
+            {
+                currentPage.deleteKeyAndRightChild(t);
+                newPage.insertEntry(t);
+            } catch (DbException e)
+            {
+                e.printStackTrace();
+            }
+        });
+        updateParentPointers(tid, dirtypages, newPage);
+
+
+        //        BTreeInternalPage rr = currentPage.get() == null ? null : (BTreeLeafPage) getPage(tid, dirtypages, currentPage.getRightSiblingId(), Permissions.READ_WRITE);
+
+        BTreeEntry firstEntry = null;
+        var pp = newPage.iterator();
+        if (pp.hasNext()) firstEntry = pp.next();
+        else throw new DbException("newPage is empty");
+        var newParent = getParentWithEmptySlots(tid, dirtypages, page.getParentId(), firstEntry.getKey());
+        newParent.insertEntry(new BTreeEntry(firstEntry.getKey(), currentPage.getId(), newPage.getId()));
+        newPage.deleteKeyAndLeftChild(firstEntry);
+
+
+        //        BTreeLeafPage rr = currentPage == null ? null : (BTreeLeafPage) getPage(tid, dirtypages, currentPage.getRightSiblingId(), Permissions.READ_WRITE);
+        //        newPage.setLeftSiblingId(currentPage.getId());
+        //        newPage.setRightSiblingId(rr != null ? rr.getId() : null);
+        //        newPage.setParentId(newParent.getId());
+        //        if (rr != null)
+        //        {
+        //            rr.setLeftSiblingId(newPage.getId());
+        //            rr.setParentId(newParent.getId());
+        //        }
         //
-        // Split the internal page by adding a new page on the right of the existing
-		// page and moving half of the entries to the new page.  Push the middle key up
-		// into the parent page, and recursively split the parent as needed to accommodate
-		// the new entry.  getParentWithEmtpySlots() will be useful here.  Don't forget to update
-		// the parent pointers of all the children moving to the new page.  updateParentPointers()
-		// will be useful here.  Return the page into which an entry with the given key field
-		// should be inserted.
-		return null;
+        //        currentPage.setRightSiblingId(newPage.getId());
+        //        currentPage.setParentId(newParent.getId());
+
+
+        newPage.markDirty(true, tid);
+        newParent.markDirty(true, tid);
+        currentPage.markDirty(true, tid);
+        dirtypages.put(newPage.getId(), newPage);
+        dirtypages.put(newParent.getId(), newParent);
+        dirtypages.put(currentPage.getId(), currentPage);
+
+        if (field.compare(Op.LESS_THAN_OR_EQ, firstEntry.getKey())) return currentPage;
+        else return newPage;
 	}
 	
 	/**
@@ -437,14 +609,26 @@ public class BTreeFile implements DbFile {
 			rootPtr.setRootId(rootId);
 		}
 
-		// find and lock the left-most leaf page corresponding to the key field,
-		// and split the leaf page if there are no more slots available
+        // 找到并锁定与关键字段对应的最左边的叶子页面，
+        //         如果没有更多可用的插槽，则拆分叶子页面
 		BTreeLeafPage leafPage = findLeafPage(tid, dirtypages, rootId, Permissions.READ_WRITE, t.getField(keyField));
-		if(leafPage.getNumEmptySlots() == 0) {
+        if (leafPage.getNumEmptySlots() == 0)
+        {
+            // System.out.println("before splitLeafPage");
+            // System.out.println("c.getNumTuples()=" + leafPage.getNumTuples() + " " + "c.getNumEmptySlots()=" + leafPage.getNumEmptySlots());
 			leafPage = splitLeafPage(tid, dirtypages, leafPage, t.getField(keyField));	
+            // BTreeLeafPage r = (BTreeLeafPage) dirtypages.get(leafPage.getRightSiblingId());
+            // BTreeLeafPage l = (BTreeLeafPage) dirtypages.get(leafPage.getLeftSiblingId());
+            // BTreePage p = (BTreePage) dirtypages.get(leafPage.getParentId());
+
+            // System.out.println("after splitLeafPage");
+            // System.out.println((l == null ? "l==null" : ("l.getNumTuples()=" + l.getNumTuples())) + " " + "c.getNumTuples()=" + leafPage.getNumTuples() + " " + (r == null ? "r==null" : ("r.getNumTuples()=" + r.getNumTuples())));
+            // System.out.println(p == null ? "p==null" : "p.getNumEmptySlots()=" + p.getNumEmptySlots());
+            // System.out.println((l == null ? "l==null" : ("l.getNumEmptySlots()=" + l.getNumEmptySlots())) + " " + "c.getNumEmptySlots()=" + leafPage.getNumEmptySlots() + " " + (r == null ? "r==null" : ("r.getNumEmptySlots()=" + r.getNumEmptySlots())));
+
 		}
 
-		// insert the tuple into the leaf page
+        // 将元组插入叶子页面
 		leafPage.insertTuple(t);
 
         return new ArrayList<>(dirtypages.values());
