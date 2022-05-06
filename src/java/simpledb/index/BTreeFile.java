@@ -640,9 +640,7 @@ public class BTreeFile implements DbFile {
         BTreeEntry rightEntry = null;
         BTreeInternalPage parent = null;
 
-        // find the left and right siblings through the parent so we make sure they have
-        // the same parent as the page. Find the entries in the parent corresponding to
-        // the page and siblings
+        // 通过父母找到左右兄弟姐妹，所以我们确保他们有 与页面相同的父级。在父项中找到对应的条目          页面和兄弟姐妹
         if (parentId.pgcateg() != BTreePageId.ROOT_PTR)
         {
             parent = (BTreeInternalPage) getPage(tid, dirtypages, parentId, Permissions.READ_WRITE);
@@ -1029,12 +1027,46 @@ public class BTreeFile implements DbFile {
      */
     public void mergeLeafPages(TransactionId tid, Map<PageId, Page> dirtypages, BTreeLeafPage leftPage, BTreeLeafPage rightPage, BTreeInternalPage parent, BTreeEntry parentEntry) throws DbException, IOException, TransactionAbortedException {
 
-        // some code goes here
-        //
-        // Move all the tuples from the right page to the left page, update
-        // the sibling pointers, and make the right page available for reuse.
-        // Delete the entry in the parent corresponding to the two pages that are merging -
-        // deleteParentEntry() will be useful here
+
+        //        将所有元组从右页移动到左页，更新
+        //         兄弟指针，并使正确的页面可供重用。
+        //         删除与正在合并的两个页面对应的父项中的条目 -
+        //         deleteParentEntry() 在这里很有用
+
+        deleteParentEntry(tid, dirtypages, leftPage, parent, parentEntry);
+
+        var it = rightPage.iterator();
+        ArrayList<Tuple> listsInfo = new ArrayList<>();
+        while (it.hasNext())
+        {
+            listsInfo.add(it.next());
+        }
+        listsInfo.forEach(t -> {
+            try
+            {
+                rightPage.deleteTuple(t);
+                leftPage.insertTuple(t);
+            } catch (DbException e)
+            {
+                e.printStackTrace();
+            }
+        });
+
+        if (rightPage.getRightSiblingId() != null)
+        {
+            BTreeLeafPage rr = (BTreeLeafPage) getPage(tid, dirtypages, rightPage.getRightSiblingId(), Permissions.READ_WRITE);
+            leftPage.setRightSiblingId(rr.getId());
+            rr.setLeftSiblingId(leftPage.getId());
+        }
+        else
+        {
+            leftPage.setRightSiblingId(null);
+        }
+        setEmptyPage(tid, dirtypages, rightPage.getId().getPageNumber());
+        if (leftPage.getParentId().equals(parent.getId()))
+        {
+            updateParentPointer(tid, dirtypages, parent.getId(), leftPage.getId());
+        }
     }
 
     /**
@@ -1058,13 +1090,42 @@ public class BTreeFile implements DbFile {
      */
     public void mergeInternalPages(TransactionId tid, Map<PageId, Page> dirtypages, BTreeInternalPage leftPage, BTreeInternalPage rightPage, BTreeInternalPage parent, BTreeEntry parentEntry) throws DbException, IOException, TransactionAbortedException {
 
-        // some code goes here
-        //
-        // Move all the entries from the right page to the left page, update
-        // the parent pointers of the children in the entries that were moved,
-        // and make the right page available for reuse
-        // Delete the entry in the parent corresponding to the two pages that are merging -
-        // deleteParentEntry() will be useful here
+        //        将所有条目从右页移动到左页，更新
+        //         被移动的条目中子项的父指针，
+        //         并使正确的页面可供重用
+        //         删除与正在合并的两个页面对应的父项中的条目 -
+        //         deleteParentEntry() 在这里很有用
+
+
+        deleteParentEntry(tid, dirtypages, leftPage, parent, parentEntry);
+        var it = rightPage.iterator();
+        ArrayList<BTreeEntry> listsInfo = new ArrayList<>();
+        while (it.hasNext())
+        {
+            listsInfo.add(it.next());
+        }
+
+        var pp = new BTreeEntry(parentEntry.getKey(), leftPage.reverseIterator().next().getRightChild(), rightPage.iterator().next().getLeftChild());
+        leftPage.insertEntry(pp);
+
+        listsInfo.forEach(t -> {
+            try
+            {
+                rightPage.deleteKeyAndLeftChild(t);
+                leftPage.insertEntry(t);
+            } catch (DbException e)
+            {
+                e.printStackTrace();
+            }
+        });
+        setEmptyPage(tid, dirtypages, rightPage.getId().getPageNumber());
+        if (leftPage.getParentId().equals(parent.getId()))
+        {
+            updateParentPointers(tid, dirtypages, parent);
+            updateParentPointer(tid, dirtypages, parent.getId(), leftPage.getId());
+        }
+        updateParentPointers(tid, dirtypages, leftPage);
+
     }
 
     /**
@@ -1093,9 +1154,7 @@ public class BTreeFile implements DbFile {
         int maxEmptySlots = parent.getMaxEntries() - parent.getMaxEntries() / 2; // ceiling
         if (parent.getNumEmptySlots() == parent.getMaxEntries())
         {
-            // This was the last entry in the parent.
-            // In this case, the parent (root node) should be deleted, and the merged
-            // page will become the new root
+            // 这是父项中的最后一个条目。             在这种情况下，应该删除父节点（根节点），并合并             页面将成为新的根
             BTreePageId rootPtrId = parent.getParentId();
             if (rootPtrId.pgcateg() != BTreePageId.ROOT_PTR)
             {
@@ -1105,7 +1164,7 @@ public class BTreeFile implements DbFile {
             leftPage.setParentId(rootPtrId);
             rootPtr.setRootId(leftPage.getId());
 
-            // release the parent page for reuse
+            // 释放父页面以供重用
             setEmptyPage(tid, dirtypages, parent.getId().getPageNumber());
         }
         else if (parent.getNumEmptySlots() > maxEmptySlots)
@@ -1132,8 +1191,7 @@ public class BTreeFile implements DbFile {
         BTreeLeafPage page = (BTreeLeafPage) getPage(tid, dirtypages, pageId, Permissions.READ_WRITE);
         page.deleteTuple(t);
 
-        // if the page is below minimum occupancy, get some tuples from its siblings
-        // or merge with one of the siblings
+        // 如果页面低于最低占用率，则从其兄弟姐妹那里获取一些元组 或与其中一个兄弟姐妹合并
         int maxEmptySlots = page.getMaxTuples() - page.getMaxTuples() / 2; // ceiling
         if (page.getNumEmptySlots() > maxEmptySlots)
         {
