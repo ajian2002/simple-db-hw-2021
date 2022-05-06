@@ -1,18 +1,15 @@
 package simpledb.index;
 
-import java.util.*;
-import java.io.*;
-
-import simpledb.common.Catalog;
-import simpledb.common.Database;
-import simpledb.common.Type;
+import simpledb.common.*;
 import simpledb.execution.Predicate.Op;
-import simpledb.common.DbException;
-import simpledb.common.Debug;
 import simpledb.storage.BufferPool;
 import simpledb.storage.Field;
 import simpledb.storage.IntField;
 import simpledb.storage.RecordId;
+
+import java.io.*;
+import java.util.Iterator;
+import java.util.NoSuchElementException;
 
 /**
  * Each instance of BTreeInternalPage stores data for one page of a BTreeFile and 
@@ -483,7 +480,7 @@ public class BTreeInternalPage extends BTreePage {
 		if (emptySlot == -1)
 			throw new DbException("called insertEntry on page with no empty slots.");        
 
-		// find the child pointer matching the left or right child in this entry
+		// 在此条目中找到与左子或右子匹配的子指针
 		int lessOrEqKey = -1;
 		for (int i=0; i<numSlots; i++) {
 			if(isSlotUsed(i)) {
