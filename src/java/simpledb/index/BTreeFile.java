@@ -293,71 +293,70 @@ public class BTreeFile implements DbFile {
 	 */
     public BTreeLeafPage splitLeafPage(TransactionId tid, Map<PageId, Page> dirtypages, BTreeLeafPage page, Field field) throws DbException, IOException, TransactionAbortedException {
 
-        //        通过在现有页面的右侧添加一个新页面来拆分叶子页面
-        //         页面并将一半的元组移动到新页面。向上复制中间键
-        //         进入父页面，并根据需要递归拆分父页面以适应
-        //         新条目。 getParentWithEmtpySlots() 在这里很有用。别忘了更新
-        //         所有受影响叶页的兄弟指针。返回 a 进入的页面
-        //         应插入具有给定键字段的元组。
-        var currentPage = page;
-        BTreeLeafPage newPage = (BTreeLeafPage) getEmptyPage(tid, dirtypages, BTreePageId.LEAF);
-        var oldit = currentPage.reverseIterator();
-        int movecount = currentPage.getNumTuples() / 2;
-        var deletList = new ArrayList<Tuple>();
-        while (oldit.hasNext())
-        {
-            if (movecount <= 0) break;
-            movecount--;
-            var t = oldit.next();
-            deletList.add(t);
-        }
-        deletList.forEach(t -> {
-            try
-            {
-                currentPage.deleteTuple(t);
-                newPage.insertTuple(t);
-            } catch (DbException e)
-            {
-                e.printStackTrace();
-            }
-        });
+		//        通过在现有页面的右侧添加一个新页面来拆分叶子页面
+		//         页面并将一半的元组移动到新页面。向上复制中间键
+		//         进入父页面，并根据需要递归拆分父页面以适应
+		//         新条目。 getParentWithEmtpySlots() 在这里很有用。别忘了更新
+		//         所有受影响叶页的兄弟指针。返回 a 进入的页面
+		//         应插入具有给定键字段的元组。
+		var currentPage = page;
+		BTreeLeafPage newPage = (BTreeLeafPage) getEmptyPage(tid, dirtypages, BTreePageId.LEAF);
+		var oldit = currentPage.reverseIterator();
+		int movecount = currentPage.getNumTuples() / 2;
+		//move
+		var deletList = new ArrayList<Tuple>();
+		while (oldit.hasNext())
+		{
+			if (movecount <= 0) break;
+			movecount--;
+			var t = oldit.next();
+			deletList.add(t);
+		}
+		deletList.forEach(t -> {
+			try
+			{
+				currentPage.deleteTuple(t);
+				newPage.insertTuple(t);
+			} catch (DbException e)
+			{
+				e.printStackTrace();
+			}
+		});
 
 
-        Field keyField = null;
-        Tuple firstTuple = null;
-        var pp = newPage.iterator();
-        if (pp.hasNext())
-        {
-            firstTuple = pp.next();
-        }
-        else throw new DbException("newPage is empty");
+		//getFirst
+		Field keyField = null;
+		Tuple firstTuple = null;
+		var pp = newPage.iterator();
+		if (pp.hasNext())
+		{
+			firstTuple = pp.next();
+		}
+		else throw new DbException("newPage is empty");
 
-        var newParent = getParentWithEmptySlots(tid, dirtypages, page.getParentId(), firstTuple.getField(keyField()));
-        newParent.insertEntry(new BTreeEntry(firstTuple.getField(keyField()), currentPage.getId(), newPage.getId()));
-        //        newParent.insertEntry(new BTreeEntry(firstTuple.getField(keyField()), currentPage.getId(), newPage.getId()));
+		//getParent&&copy
+		var newParent = getParentWithEmptySlots(tid, dirtypages, currentPage.getParentId(), firstTuple.getField(keyField()));
+		newParent.insertEntry(new BTreeEntry(firstTuple.getField(keyField()), currentPage.getId(), newPage.getId()));
 
-        BTreeLeafPage rr = currentPage.getRightSiblingId() == null ? null : (BTreeLeafPage) getPage(tid, dirtypages, currentPage.getRightSiblingId(), Permissions.READ_WRITE);
-        newPage.setLeftSiblingId(currentPage.getId());
-        newPage.setRightSiblingId(rr != null ? rr.getId() : null);
-        newPage.setParentId(newParent.getId());
-        if (rr != null)
-        {
-            rr.setLeftSiblingId(newPage.getId());
-            rr.setParentId(newParent.getId());
-        }
 
-        currentPage.setRightSiblingId(newPage.getId());
-        currentPage.setParentId(newParent.getId());
-        newPage.markDirty(true, tid);
-        newParent.markDirty(true, tid);
-        currentPage.markDirty(true, tid);
-        dirtypages.put(newPage.getId(), newPage);
-        dirtypages.put(newParent.getId(), newParent);
-        dirtypages.put(currentPage.getId(), currentPage);
+		//set Left&Right
+		BTreeLeafPage rr = currentPage.getRightSiblingId() == null ? null : (BTreeLeafPage) getPage(tid, dirtypages, currentPage.getRightSiblingId(), Permissions.READ_WRITE);
+		newPage.setLeftSiblingId(currentPage.getId());
+		newPage.setRightSiblingId(rr != null ? rr.getId() : null);
+		//		newPage.setParentId(newParent.getId());
+		if (rr != null)
+		{
+			rr.setLeftSiblingId(newPage.getId());
+			//			rr.setParentId(newParent.getId());
+		}
 
-        if (field.compare(Op.LESS_THAN_OR_EQ, firstTuple.getField(keyField()))) return currentPage;
-        else return newPage;
-		
+		currentPage.setRightSiblingId(newPage.getId());
+		//        currentPage.setParentId(newParent.getId());
+		updateParentPointer(tid, dirtypages, newParent.getId(), currentPage.getId());
+		updateParentPointer(tid, dirtypages, newParent.getId(), newPage.getId());
+		updateParentPointers(tid, dirtypages, newParent);
+		if (field.compare(Op.LESS_THAN_OR_EQ, firstTuple.getField(keyField()))) return currentPage;
+		else return newPage;
 	}
 	
 	/**
@@ -383,73 +382,53 @@ public class BTreeFile implements DbFile {
 	 * @throws TransactionAbortedException
 	 */
     public BTreeInternalPage splitInternalPage(TransactionId tid, Map<PageId, Page> dirtypages, BTreeInternalPage page, Field field) throws DbException, IOException, TransactionAbortedException {
-        //          通过在现有页面的右侧添加新页面来拆分内部页面
-        //         页面并将一半条目移动到新页面。向上推中间键
-        //         进入父页面，并根据需要递归拆分父页面以适应
-        //         新条目。 getParentWithEmtpySlots() 在这里很有用。别忘了更新
-        //         所有子移动到新页面的父指针。更新父指针（）
-        //         在这里会有用。返回具有给定键字段的条目所在的页面
-        //         应该插入。
+		//          通过在现有页面的右侧添加新页面来拆分内部页面
+		//         页面并将一半条目移动到新页面。向上推中间键
+		//         进入父页面，并根据需要递归拆分父页面以适应
+		//         新条目。 getParentWithEmtpySlots() 在这里很有用。别忘了更新
+		//         所有子移动到新页面的父指针。更新父指针（）
+		//         在这里会有用。返回具有给定键字段的条目所在的页面
+		//         应该插入。
 
-        var currentPage = page;
-        BTreeInternalPage newPage = (BTreeInternalPage) getEmptyPage(tid, dirtypages, BTreePageId.INTERNAL);
-        var oldit = currentPage.reverseIterator();
-        int movecount = currentPage.getNumEntries() / 2 + 1;
-        var deletList = new ArrayList<BTreeEntry>();
-        while (oldit.hasNext())
-        {
-            if (movecount <= 0) break;
-            movecount--;
-            var t = oldit.next();
-            deletList.add(t);
-        }
-        deletList.forEach(t -> {
-            try
-            {
-                currentPage.deleteKeyAndRightChild(t);
-                newPage.insertEntry(t);
-            } catch (DbException e)
-            {
-                e.printStackTrace();
-            }
-        });
-        updateParentPointers(tid, dirtypages, newPage);
-
-
-        //        BTreeInternalPage rr = currentPage.get() == null ? null : (BTreeLeafPage) getPage(tid, dirtypages, currentPage.getRightSiblingId(), Permissions.READ_WRITE);
-
-        BTreeEntry firstEntry = null;
-        var pp = newPage.iterator();
-        if (pp.hasNext()) firstEntry = pp.next();
-        else throw new DbException("newPage is empty");
-        var newParent = getParentWithEmptySlots(tid, dirtypages, page.getParentId(), firstEntry.getKey());
-        newParent.insertEntry(new BTreeEntry(firstEntry.getKey(), currentPage.getId(), newPage.getId()));
-        newPage.deleteKeyAndLeftChild(firstEntry);
+		var currentPage = page;
+		BTreeInternalPage newPage = (BTreeInternalPage) getEmptyPage(tid, dirtypages, BTreePageId.INTERNAL);
+		var oldit = currentPage.reverseIterator();
+		int movecount = currentPage.getNumEntries() / 2 + 1;
+		var deletList = new ArrayList<BTreeEntry>();
+		while (oldit.hasNext())
+		{
+			if (movecount <= 0) break;
+			movecount--;
+			var t = oldit.next();
+			deletList.add(t);
+		}
+		deletList.forEach(t -> {
+			try
+			{
+				currentPage.deleteKeyAndRightChild(t);
+				newPage.insertEntry(t);
+			} catch (DbException e)
+			{
+				e.printStackTrace();
+			}
+		});
+		updateParentPointers(tid, dirtypages, newPage);
+		updateParentPointers(tid, dirtypages, currentPage);
 
 
-        //        BTreeLeafPage rr = currentPage == null ? null : (BTreeLeafPage) getPage(tid, dirtypages, currentPage.getRightSiblingId(), Permissions.READ_WRITE);
-        //        newPage.setLeftSiblingId(currentPage.getId());
-        //        newPage.setRightSiblingId(rr != null ? rr.getId() : null);
-        //        newPage.setParentId(newParent.getId());
-        //        if (rr != null)
-        //        {
-        //            rr.setLeftSiblingId(newPage.getId());
-        //            rr.setParentId(newParent.getId());
-        //        }
-        //
-        //        currentPage.setRightSiblingId(newPage.getId());
-        //        currentPage.setParentId(newParent.getId());
+		BTreeEntry firstEntry = null;
+		var pp = newPage.iterator();
+		if (pp.hasNext()) firstEntry = pp.next();
+		else throw new DbException("newPage is empty");
+
+		var newParent = getParentWithEmptySlots(tid, dirtypages, currentPage.getParentId(), firstEntry.getKey());
+		newParent.insertEntry(new BTreeEntry(firstEntry.getKey(), currentPage.getId(), newPage.getId()));
+		newPage.deleteKeyAndLeftChild(firstEntry);
 
 
-        newPage.markDirty(true, tid);
-        newParent.markDirty(true, tid);
-        currentPage.markDirty(true, tid);
-        dirtypages.put(newPage.getId(), newPage);
-        dirtypages.put(newParent.getId(), newParent);
-        dirtypages.put(currentPage.getId(), currentPage);
-
-        if (field.compare(Op.LESS_THAN_OR_EQ, firstEntry.getKey())) return currentPage;
-        else return newPage;
+		updateParentPointers(tid, dirtypages, newParent);
+		if (field.compare(Op.LESS_THAN_OR_EQ, firstEntry.getKey())) return currentPage;
+		else return newPage;
 	}
 	
 	/**
