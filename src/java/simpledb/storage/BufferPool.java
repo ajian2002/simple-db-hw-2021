@@ -12,8 +12,6 @@ import java.io.IOException;
 import java.util.*;
 import java.util.function.Consumer;
 
-import static org.junit.Assert.assertNotNull;
-
 /**
  * BufferPool manages the reading and writing of pages into memory from
  * disk. Access methods call into it to retrieve pages, and it fetches
@@ -130,7 +128,7 @@ public class BufferPool {
      * @param tid the ID of the transaction requesting the unlock
      * @param pid the ID of the page to unlock
      */
-    public synchronized void unsafeReleasePage(TransactionId tid, PageId pid) {
+    public void unsafeReleasePage(TransactionId tid, PageId pid) {
         lockManager.releaseReadWriteLock(pid, tid);
     }
 
@@ -171,7 +169,7 @@ public class BufferPool {
      * @param tid    the ID of the transaction requesting the unlock
      * @param commit a flag indicating whether we should commit or abort
      */
-    public synchronized void transactionComplete(TransactionId tid, boolean commit) {
+    public void transactionComplete(TransactionId tid, boolean commit) {
         if (commit)
         {
             transactionComplete(tid);
@@ -181,9 +179,10 @@ public class BufferPool {
         else
         {
             //恢复脏页面
-            lockManager.getPagesByTid(tid).forEach(this::discardPage);
+            //            lockManager.getPagesByTid(tid).forEach(this::discardPage);
             //放锁
             lockManager.getPagesByTid(tid).forEach(pid -> {
+                discardPage(pid);
                 unsafeReleasePage(tid, pid);
             });
         }
@@ -345,13 +344,13 @@ public class BufferPool {
             pages = Collections.synchronizedMap(new HashMap<>(numPages));
         }
 
-        public synchronized Page get(PageId pid) {
+        public Page get(PageId pid) {
             if (pid == null) return null;
             var pa = pages.get(pid);
             if (pa == null) return null;
             var pp = times.get(pa.time);
-            times.remove(pa.time);
             times.put(System.currentTimeMillis(), pp);
+            times.remove(pa.time);
             return pa.page;
         }
 
@@ -377,12 +376,12 @@ public class BufferPool {
             pages.remove(pageId);
         }
 
-        public synchronized void forEachPageId(Consumer<PageId> action) {
+        public void forEachPageId(Consumer<PageId> action) {
             if (action == null) return;
             pages.keySet().forEach(action);
         }
 
-        public synchronized void forEachPageAndTime(Consumer<PageAndTime> action) {
+        public void forEachPageAndTime(Consumer<PageAndTime> action) {
             if (action == null) return;
             pages.values().forEach(action);
         }
@@ -396,7 +395,7 @@ public class BufferPool {
             return null;
         }
 
-        public synchronized PageId getNotDirtyLRUPage() throws DbException {
+        public PageId getNotDirtyLRUPage() throws DbException {
             boolean allDirty = false;
             for (PageAndTime pageAndTime : pages.values())
             {

@@ -14,212 +14,265 @@ import java.util.*;
 public class LockManager {
 
 
-    private final Map<PageId, Data> dataLockMap = Collections.synchronizedMap(new HashMap<PageId, Data>());
+    private final Map<PageId, Data> dataLockMap = Collections.synchronizedMap(new HashMap<>());
 
-    private synchronized Data getData(PageId pid) {
-        if (dataLockMap.containsKey(pid))
+    private Data getData(PageId pid) {
+        if (pid == null) return null;
+        if (dataLockMap.containsKey(pid)) return dataLockMap.get(pid);
+        else
         {
-            return dataLockMap.get(pid);
+            synchronized (dataLockMap)
+            {
+                if (!dataLockMap.containsKey(pid))
+                {
+                    var data = new Data(pid);
+                    dataLockMap.put(pid, data);
+                    return data;
+                }
+                else return dataLockMap.get(pid);
+            }
         }
-        var data = new Data(pid);
-        dataLockMap.put(pid, data);
-        return data;
     }
 
-    private synchronized List<LockStatus> getLockStatus(PageId pid) {
+    private List<LockStatus> getLockStatus(PageId pid) {
         return getData(pid).getLists();
     }
 
-    public synchronized void getWriteLock(PageId pid, TransactionId tid) throws TransactionAbortedException {
+    public void getWriteLock(PageId pid, TransactionId tid) throws TransactionAbortedException {
         var data = getData(pid);
         var lockStatus = getLockStatus(pid);
         LockStatus temp = null;
         boolean has = false;
-        for (LockStatus d : lockStatus)
+        synchronized (lockStatus)//锁链遍历查找
         {
-            if (d.tid.equals(tid))
+            for (LockStatus ls : lockStatus)
             {
-                temp = d;
-                has = true;
-                break;
+                synchronized (ls)
+                {
+                    if (ls.tid.equals(tid))
+                    {
+                        temp = ls;
+                        has = true;
+                        break;
+                    }
+                }
             }
         }
+
         if (has)
         {
-            if (temp.isReadLock)
+            synchronized (temp)
             {
-                TryLock(data, tid, temp, "[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":已有读锁,申请写锁:", true);
-                BlockLock(data, tid, temp, "[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":已有读锁,阻塞申请写锁:", true);
+                if (temp.isReadLock)
+                {
+                    TryLock(data, tid, temp, "[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":已有读锁,申请写锁:", true);
+                    BlockLock(data, tid, temp, "[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":已有读锁,阻塞申请写锁:", true);
+                }
+                else return;//            else System.out.println("已有写锁,申请写锁");
             }
-            //            else System.out.println("已有写锁,申请写锁");
-            //            else logger.info("已有写锁,申请写锁");
         }
         else
         {
             temp = NewLock(data, tid, temp, "[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":未持有锁,申请写锁:", true);
             BlockLock(data, tid, temp, "[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":未持有锁,阻塞申请写锁:", true);
         }
-        data.lists.set(data.lists.indexOf(temp), temp);
+
+        synchronized (lockStatus)
+        {
+            if (has) lockStatus.set(lockStatus.indexOf(temp), temp);
+            else lockStatus.add(temp);
+        }
     }
 
-    public synchronized void getReadLock(PageId pid, TransactionId tid) throws TransactionAbortedException {
+
+    public void getReadLock(PageId pid, TransactionId tid) throws TransactionAbortedException {
         var data = getData(pid);
+        var lockStatus = getLockStatus(pid);
         LockStatus temp = null;
         boolean has = false;
-        for (LockStatus ls : data.getLists())
+        synchronized (lockStatus)//锁链遍历查找
         {
-            if (ls.tid.equals(tid))
+            for (LockStatus ls : lockStatus)
             {
-                temp = ls;
-                has = true;
-                break;
+                synchronized (ls)
+                {
+                    if (ls.tid.equals(tid))
+                    {
+                        temp = ls;
+                        has = true;
+                        break;
+                    }
+                }
             }
         }
-        if (has)
-        {
-            if (temp.isWriteLock)
-            {
-                //                {
-                //                    s = "已有写锁,申请读锁,测试要求不实现" + "[" + pid.getTableId() % 100 + ":" + pid.getPageNumber() + "]" + Thread.currentThread().getName();
-                //                    //                    System.out.println(s);
-                //                    logger.info(s);
-                //                }
-
-            }
-            // else          System.out.println("已有读锁,申请读锁");
-            // else          logger.info("已有读锁,申请读锁");
-
-        }
-        else
+        if (!has)
         {
             temp = NewLock(data, tid, temp, "[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":未持有锁,申请读锁:", false);
             BlockLock(data, tid, temp, "[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":未持有锁,阻塞申请读锁:", false);
         }
-        data.lists.set(data.lists.indexOf(temp), temp);
+        else
+            //            if (temp.isWriteLock) //"已有写锁,申请读锁,测试要求不实现"
+            // else          System.out.println("已有读锁,申请读锁");
+            return;
+        synchronized (lockStatus)
+        {
+            if (has) lockStatus.set(lockStatus.indexOf(temp), temp);
+            else lockStatus.add(temp);
+        }
+
     }
 
-    public synchronized void releaseReadWriteLock(PageId pid, TransactionId tid) {
-        var data = getData(pid);
+
+    public void releaseReadWriteLock(PageId pid, TransactionId tid) {
         var lockStatus = getLockStatus(pid);
-        for (LockStatus ls : lockStatus)
+        synchronized (lockStatus)
         {
-            if (tid.equals(ls.tid))
+            for (LockStatus ls : lockStatus)
             {
-                if (ls.gettedLock)
+                synchronized (ls)
                 {
-                    try
+                    if (tid.equals(ls.tid))
                     {
-                        ls.lock.unlock(tid);
-                        LogPrint.print("[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":释放" + (ls.gettedLock && ls.isReadLock ? "读锁" : ls.gettedLock && ls.isWriteLock ? "写锁" : "未知锁"));
-                        //                        + Arrays.toString(Thread.currentThread().getStackTrace())
-                    } catch (Exception e)
-                    {
-                        e.printStackTrace();
+                        if (ls.gettedLock)
+                        {
+                            try
+                            {
+                                ls.lock.unlock(tid);
+                                LogPrint.print("[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":释放" + (ls.gettedLock && ls.isReadLock ? "读锁" : ls.gettedLock && ls.isWriteLock ? "写锁" : "未知锁"));
+                            } catch (Exception e)
+                            {
+                                e.printStackTrace();
+                            }
+                        }
+                        synchronized (lockStatus)
+                        {
+                            lockStatus.remove(ls);
+                        }
+                        break;
                     }
                 }
-                lockStatus.remove(ls);
-                break;
             }
         }
     }
 
-    public synchronized boolean hasLock(PageId pid, TransactionId tid) {
-        var data = getData(pid);
+    public boolean hasLock(PageId pid, TransactionId tid) {
         var lockStatus = getLockStatus(pid);
-        for (LockStatus ls : lockStatus)
+        synchronized (lockStatus)
         {
-            if (tid.equals(ls.tid))
+            for (LockStatus ls : lockStatus)
             {
-                if (ls.gettedLock) return true;
-                break;
+                synchronized (ls)
+                {
+                    if (tid.equals(ls.tid))
+                    {
+                        if (ls.gettedLock) return true;
+                        break;
+                    }
+                }
             }
         }
         return false;
     }
 
-    public synchronized Permissions whichLock(PageId pid, TransactionId tid) {
-        if (hasLock(pid, tid))
+    public Permissions whichLock(PageId pid, TransactionId tid) {
+
+        var lockStatus = getLockStatus(pid);
+        synchronized (lockStatus)
         {
-            var data = getData(pid);
-            var lockStatus = getLockStatus(pid);
             for (LockStatus ls : lockStatus)
             {
-                if (tid.equals(ls.tid))
+                synchronized (ls)
                 {
-                    if (ls.gettedLock)
+                    if (tid.equals(ls.tid))
                     {
-                        return ls.isReadLock ? Permissions.READ_ONLY : Permissions.READ_WRITE;
+                        if (ls.gettedLock) return ls.isReadLock ? Permissions.READ_ONLY : Permissions.READ_WRITE;
+                        break;
                     }
                 }
             }
-
         }
         return null;
     }
 
-    public synchronized List<PageId> getPagesByTid(TransactionId tid) {
+    public List<PageId> getPagesByTid(TransactionId tid) {
         List<PageId> pages = new ArrayList<PageId>();
-        dataLockMap.values().forEach(e -> {
-            e.getLists().forEach(ee -> {
-                if (ee.tid.equals(tid) && ee.gettedLock) pages.add(e.getPid());
-            });
-        });
+        synchronized (dataLockMap)
+        {
+            for (Data e : dataLockMap.values())
+            {
+                var lockStatus = e.getLists();
+                synchronized (lockStatus)
+                {
+                    for (LockStatus ls : lockStatus)
+                    {
+                        synchronized (ls)
+                        {
+                            if (ls.gettedLock && ls.tid.equals(tid))
+                            {
+                                pages.add(e.getPid());
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
         return pages;
     }
 
-    private synchronized void BlockLock(LockManager.Data data, TransactionId tid, LockStatus temp, String s, boolean write) throws TransactionAbortedException {
-        if (!temp.gettedLock)
+    private void BlockLock(LockManager.Data data, TransactionId tid, LockStatus temp, String s, boolean write) throws TransactionAbortedException {
+        synchronized (temp)
         {
-            try
+            if (!temp.gettedLock)
             {
-                if (!temp.gettedLock && temp.lock != null)
+                try
                 {
-                    temp.lock.lock(tid);
+                    if (!temp.gettedLock && temp.lock != null) temp.lock.lock(tid);
+                    if (write) temp.setWriteLock();
+                    else temp.setReadLock();
+                } finally
+                {
+                    if (write) LogPrint.print(s + (temp.gettedLock && temp.isWriteLock ? "成功" : "失败"));
+                    else LogPrint.print(s + (temp.gettedLock && temp.isReadLock ? "成功" : "失败"));
                 }
+            }
+        }
 
-                if (write) temp.setWriteLock();
-                else temp.setReadLock();
+    }
 
-                data.lists.set(data.lists.indexOf(temp), temp);
-            } catch (TransactionAbortedException e)
+    private void TryLock(LockManager.Data data, TransactionId tid, LockStatus temp, String s, boolean write) throws TransactionAbortedException {
+        LogPrint.print(s);
+        synchronized (temp)
+        {
+            if (write)
             {
-                throw e;
-            } finally
+                temp.setWriteLock();
+                LogPrint.print(s + (temp.gettedLock && temp.isWriteLock ? "成功" : "失败"));
+            }
+            else
             {
-                if (write) LogPrint.print(s + (temp.gettedLock && temp.isWriteLock ? "成功" : "失败"));
-                else LogPrint.print(s + (temp.gettedLock && temp.isReadLock ? "成功" : "失败"));
+                temp.setReadLock();
+                LogPrint.print(s + (temp.gettedLock && temp.isReadLock ? "成功" : "失败"));
             }
         }
     }
 
-    private synchronized void TryLock(LockManager.Data data, TransactionId tid, LockStatus temp, String s, boolean write) throws TransactionAbortedException {
-        LogPrint.print(s);
-        if (write)
-        {
-            temp.setWriteLock();
-            LogPrint.print(s + (temp.gettedLock && temp.isWriteLock ? "成功" : "失败"));
-        }
-        else
-        {
-            temp.setReadLock();
-            LogPrint.print(s + (temp.gettedLock && temp.isReadLock ? "成功" : "失败"));
-        }
-    }
-
-    private synchronized LockStatus NewLock(LockManager.Data data, TransactionId tid, LockStatus temp, String s, boolean write) throws TransactionAbortedException {
+    private LockStatus NewLock(LockManager.Data data, TransactionId tid, LockStatus temp, String s, boolean write) throws TransactionAbortedException {
         LogPrint.print(s);
         temp = new LockStatus(tid, data);
-        if (write)
+        synchronized (temp)
         {
-            temp.setWriteLock();
-            LogPrint.print(s + (temp.gettedLock && temp.isWriteLock ? "成功" : "失败"));
+            if (write)
+            {
+                temp.setWriteLock();
+                LogPrint.print(s + (temp.gettedLock && temp.isWriteLock ? "成功" : "失败"));
+            }
+            else
+            {
+                temp.setReadLock();
+                LogPrint.print(s + (temp.gettedLock && temp.isReadLock ? "成功" : "失败"));
+            }
         }
-        else
-        {
-            temp.setReadLock();
-            LogPrint.print(s + (temp.gettedLock && temp.isReadLock ? "成功" : "失败"));
-        }
-        data.lists.add(temp);
         return temp;
     }
 
@@ -284,14 +337,14 @@ public class LockManager {
 
     private class Data {
         private final ReadWriteLock lock = new FakeReadWriteLock();
-        private final ArrayList<LockStatus> lists = new ArrayList<>();
+        private final List<LockStatus> lists = Collections.synchronizedList(new ArrayList<>());
         private PageId pid = null;
 
         public Data(PageId pid) {
             this.pid = pid;
         }
 
-        public ArrayList<LockStatus> getLists() {
+        public List<LockStatus> getLists() {
             return lists;
         }
 

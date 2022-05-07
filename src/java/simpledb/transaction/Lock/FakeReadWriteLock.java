@@ -54,61 +54,70 @@ public class FakeReadWriteLock implements ReadWriteLock {
         @Override
         public synchronized void lock(TransactionId tid) throws TransactionAbortedException {
             if (tid == null) return;
-            if (f.rlist.contains(tid)) return;
-            if (f.wlist.contains(tid)) return;
-            if (f.wlist.size() == 0)
+            synchronized (f)
             {
-                f.rlist.add(tid);
-            }
-            else
-            {
-                ThreadLocal<Long> time = new ThreadLocal<>();
-                time.set(System.currentTimeMillis());
-                var rt = (int) (Math.random() * RANDOMTIME);
-                var count = 1;
-                while (f.wlist.size() != 0)
+                if (f.rlist.contains(tid)) return;
+                if (f.wlist.contains(tid)) return;
+                if (f.wlist.size() == 0)
                 {
-                    LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + "等待加读锁");
-                    if (System.currentTimeMillis() - time.get() > TIMEOUT)
-                    {
-                        LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + "加读锁失败,事务中断");
-                        throw new TransactionAbortedException();
-                    }
-                    else
-                    {
-                        LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":阻塞申请读锁:" + "失败" + count++);
-                    }
-                    try
-                    {
-                        Thread.sleep(SLEEPTIME + rt);
-                    } catch (InterruptedException e)
-                    {
-                        e.printStackTrace();
-                    }
+                    f.rlist.add(tid);
                 }
-                f.rlist.add(tid);
-                LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + "加读锁成功");
+                else
+                {
+                    ThreadLocal<Long> time = new ThreadLocal<>();
+                    time.set(System.currentTimeMillis());
+                    var rt = (int) (Math.random() * RANDOMTIME);
+                    var count = 1;
+                    while (f.wlist.size() != 0)
+                    {
+                        LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + "等待加读锁");
+                        if (System.currentTimeMillis() - time.get() > TIMEOUT)
+                        {
+                            LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + "加读锁失败,事务中断");
+                            throw new TransactionAbortedException();
+                        }
+                        else
+                        {
+                            LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":阻塞申请读锁:" + "失败" + count++);
+                        }
+                        try
+                        {
+                            Thread.sleep(SLEEPTIME + rt);
+                        } catch (InterruptedException e)
+                        {
+                            e.printStackTrace();
+                        }
+                    }
+                    f.rlist.add(tid);
+                    LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + "加读锁成功");
+                }
             }
         }
 
         @Override
-        public synchronized boolean tryLock(TransactionId tid) throws TransactionAbortedException {
+        public boolean tryLock(TransactionId tid) throws TransactionAbortedException {
             if (tid == null) return false;
-            if (f.rlist.contains(tid)) return true;
-            if (f.wlist.contains(tid)) return true;
-            if (f.wlist.size() == 0)
+            synchronized (f)
             {
-                lock(tid);
-                return true;
+                if (f.rlist.contains(tid)) return true;
+                if (f.wlist.contains(tid)) return true;
+                if (f.wlist.size() == 0)
+                {
+                    lock(tid);
+                    return true;
+                }
+                else return false;
             }
-            else return false;
 
         }
 
         @Override
         public synchronized void unlock(TransactionId tid) {
             if (tid == null) return;
-            f.rlist.remove(tid);
+            synchronized (f)
+            {
+                f.rlist.remove(tid);
+            }
         }
     }
 
@@ -128,61 +137,70 @@ public class FakeReadWriteLock implements ReadWriteLock {
         public synchronized void lock(TransactionId tid) throws TransactionAbortedException {
 
             if (tid == null) return;
-            if (f.wlist.contains(tid)) return;
-            if (f.rlist.contains(tid)) f.rlist.remove(tid);
-            if (f.rlist.size() == 0 && f.wlist.size() == 0)
+            synchronized (f)
             {
-                f.wlist.add(tid);
-                //                LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":阻塞申请写锁:" + "成功");
-            }
-            else
-            {
-                ThreadLocal time = new ThreadLocal();
-                time.set(System.currentTimeMillis());
-                var rt = (int) (Math.random() * RANDOMTIME);
-                var count = 1;
-                while (f.rlist.size() != 0 || f.wlist.size() != 0)
+                if (f.wlist.contains(tid)) return;
+                if (f.rlist.contains(tid)) f.rlist.remove(tid);
+                if (f.rlist.size() == 0 && f.wlist.size() == 0)
                 {
-                    LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + "等待加写锁");
-                    if (System.currentTimeMillis() - (Long) (time.get()) > TIMEOUT)
-                    {
-                        LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + "等待加写锁失败,事务中断");
-                        throw new TransactionAbortedException();
-                    }
-                    else
-                    {
-                        LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":阻塞申请写锁:" + "失败" + count++);
-                    }
-                    try
-                    {
-                        Thread.sleep(SLEEPTIME + rt);
-                    } catch (InterruptedException e)
-                    {
-                        e.printStackTrace();
-                    }
+                    f.wlist.add(tid);
+                    //                LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":阻塞申请写锁:" + "成功");
                 }
-                f.wlist.add(tid);
-                LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + "加写锁成功");
+                else
+                {
+                    ThreadLocal time = new ThreadLocal();
+                    time.set(System.currentTimeMillis());
+                    var rt = (int) (Math.random() * RANDOMTIME);
+                    var count = 1;
+                    while (f.rlist.size() != 0 || f.wlist.size() != 0)
+                    {
+                        LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + "等待加写锁");
+                        if (System.currentTimeMillis() - (Long) (time.get()) > TIMEOUT)
+                        {
+                            LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + "等待加写锁失败,事务中断");
+                            throw new TransactionAbortedException();
+                        }
+                        else
+                        {
+                            LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":阻塞申请写锁:" + "失败" + count++);
+                        }
+                        try
+                        {
+                            Thread.sleep(SLEEPTIME + rt);
+                        } catch (InterruptedException e)
+                        {
+                            e.printStackTrace();
+                        }
+                    }
+                    f.wlist.add(tid);
+                    LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + "加写锁成功");
+                }
             }
         }
 
         @Override
         public synchronized boolean tryLock(TransactionId tid) throws TransactionAbortedException {
             if (tid == null) return false;
-            if (f.wlist.contains(tid)) return true;
-            if (f.rlist.contains(tid)) f.rlist.remove(tid);
-            if (f.rlist.size() == 0 && f.wlist.size() == 0)
+            synchronized (f)
             {
-                lock(tid);
-                return true;
+                if (f.wlist.contains(tid)) return true;
+                if (f.rlist.contains(tid)) f.rlist.remove(tid);
+                if (f.rlist.size() == 0 && f.wlist.size() == 0)
+                {
+                    lock(tid);
+                    return true;
+                }
+                return false;
             }
-            return false;
         }
 
         @Override
         public synchronized void unlock(TransactionId tid) {
             if (tid == null) return;
-            f.wlist.remove(tid);
+            synchronized (f)
+            {
+                f.wlist.remove(tid);
+            }
         }
     }
 
