@@ -3,7 +3,7 @@ package simpledb.storage;
 import simpledb.common.Database;
 import simpledb.common.DbException;
 import simpledb.common.Permissions;
-import simpledb.transaction.Lock.LockManager;
+import simpledb.transaction.Locks.LockManager;
 import simpledb.transaction.TransactionAbortedException;
 import simpledb.transaction.TransactionId;
 import simpledb.utils.LogPrint;

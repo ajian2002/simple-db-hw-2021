@@ -1,4 +1,4 @@
-package simpledb.transaction.Lock;
+package simpledb.transaction.Locks;
 
 public interface ReadWriteLock {
     Lock readLock();

@@ -1,4 +1,4 @@
-package simpledb.transaction.Lock;
+package simpledb.transaction.Locks;
 
 import simpledb.common.Permissions;
 import simpledb.storage.PageId;
