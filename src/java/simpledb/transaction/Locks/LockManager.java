@@ -268,7 +268,7 @@ public class LockManager {
             {
                 try
                 {
-                    if (!temp.gettedLock && temp.lock != null) temp.lock.lock(tid);
+                    if (temp.lock != null) temp.lock.lock(tid);
                     if (write) temp.setWriteLock();
                     else temp.setReadLock();
                 } finally

@@ -13,6 +13,8 @@ import simpledb.transaction.TransactionId;
 import java.io.*;
 import java.util.*;
 
+import static org.junit.Assert.assertNotNull;
+
 /**
  * BTreeFile is an implementation of a DbFile that stores a B+ tree.
  * Specifically, it stores a pointer to a root page,
@@ -549,12 +551,12 @@ public class BTreeFile implements DbFile {
     public List<Page> insertTuple(TransactionId tid, Tuple t) throws DbException, IOException, TransactionAbortedException {
         Map<PageId, Page> dirtypages = new HashMap<>();
 
-        // get a read lock on the root pointer page and use it to locate the root page
+        // 在根指针页面上获得读锁并使用它来定位根页面
         BTreeRootPtrPage rootPtr = getRootPtrPage(tid, dirtypages);
         BTreePageId rootId = rootPtr.getRootId();
 
         if (rootId == null)
-        { // the root has just been created, so set the root pointer to point to it
+        { // 根刚刚创建，所以设置根指针指向它
             rootId = new BTreePageId(tableid, numPages(), BTreePageId.LEAF);
             rootPtr = (BTreeRootPtrPage) getPage(tid, dirtypages, BTreeRootPtrPage.getId(tableid), Permissions.READ_WRITE);
             rootPtr.setRootId(rootId);
@@ -563,6 +565,7 @@ public class BTreeFile implements DbFile {
         // 找到并锁定与关键字段对应的最左边的叶子页面，
         //         如果没有更多可用的插槽，则拆分叶子页面
         BTreeLeafPage leafPage = findLeafPage(tid, dirtypages, rootId, Permissions.READ_WRITE, t.getField(keyField));
+        assertNotNull(leafPage);
         if (leafPage.getNumEmptySlots() == 0)
         {
             // System.out.println("before splitLeafPage");
@@ -963,9 +966,9 @@ public class BTreeFile implements DbFile {
         while (it.hasNext())
         {
             var t = it.next();
-                rightPage.deleteTuple(t);
-                leftPage.insertTuple(t);
-            }
+            rightPage.deleteTuple(t);
+            leftPage.insertTuple(t);
+        }
 
         if (rightPage.getRightSiblingId() != null)
         {
@@ -981,7 +984,7 @@ public class BTreeFile implements DbFile {
         setEmptyPage(tid, dirtypages, rightPage.getId().getPageNumber());
 
         dirtypages.put(parent.getId(), parent);
-            updateParentPointer(tid, dirtypages, parent.getId(), leftPage.getId());
+        updateParentPointer(tid, dirtypages, parent.getId(), leftPage.getId());
         deleteParentEntry(tid, dirtypages, leftPage, parent, parentEntry);
 
     }
@@ -1017,20 +1020,20 @@ public class BTreeFile implements DbFile {
         dirtypages.put(leftPage.getId(), leftPage);
         dirtypages.put(parent.getId(), parent);
         var pp = new BTreeEntry(parentEntry.getKey(), leftPage.reverseIterator().next().getRightChild(), rightPage.iterator().next().getLeftChild());
+        deleteParentEntry(tid, dirtypages, leftPage, parent, parentEntry);
         leftPage.insertEntry(pp);
 
         var it = rightPage.iterator();
-        ArrayList<BTreeEntry> listsInfo = new ArrayList<>();
         while (it.hasNext())
         {
             var t = it.next();
-                rightPage.deleteKeyAndLeftChild(t);
-                leftPage.insertEntry(t);
-            }
-        updateParentPointers(tid, dirtypages, leftPage);
+            rightPage.deleteKeyAndLeftChild(t);
+            leftPage.insertEntry(t);
+        }
         setEmptyPage(tid, dirtypages, rightPage.getId().getPageNumber());
-        deleteParentEntry(tid, dirtypages, leftPage, parent, parentEntry);
-            updateParentPointers(tid, dirtypages, parent);
+        updateParentPointers(tid, dirtypages, leftPage);
+        updateParentPointers(tid, dirtypages, parent);
+
         //        if (leftPage.getParentId().equals(parent.getId()))
         //        {
         //            updateParentPointers(tid, dirtypages, parent);

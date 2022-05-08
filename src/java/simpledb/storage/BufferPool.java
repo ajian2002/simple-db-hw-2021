@@ -243,7 +243,6 @@ public class BufferPool {
      * break simpledb if running in NO STEAL mode.
      */
     public void flushAllPages() throws IOException {
-        // some code goes here
         pagesManager.forEachPageId(pid -> {
             try
             {
@@ -299,7 +298,6 @@ public class BufferPool {
                 try
                 {
                     var p = pagesManager.get(pid);
-
                     //                assertNotNull("p 没了", p);
                     if (p == null)
                     {
@@ -400,10 +398,7 @@ public class BufferPool {
         public synchronized void forEachPageAndTime(Consumer<PageAndTime> action) {
             if (action == null) return;
             var values = pages.values();
-
             values.forEach(action);
-
-
         }
 
         public PageId getLRUPage() {
