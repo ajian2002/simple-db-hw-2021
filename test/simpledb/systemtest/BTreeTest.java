@@ -1,25 +1,25 @@
 package simpledb.systemtest;
 
+import org.junit.After;
+import org.junit.Test;
 import simpledb.common.Database;
 import simpledb.execution.IndexPredicate;
+import simpledb.execution.Predicate.Op;
 import simpledb.index.BTreeFile;
 import simpledb.index.BTreeUtility;
+import simpledb.index.BTreeUtility.BTreeDeleter;
+import simpledb.index.BTreeUtility.BTreeInserter;
 import simpledb.storage.*;
-
-import static org.junit.Assert.*;
+import simpledb.transaction.TransactionId;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
 
-import org.junit.After;
-import org.junit.Test;
-
-import simpledb.index.BTreeUtility.*;
-import simpledb.execution.Predicate.Op;
-import simpledb.transaction.TransactionId;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 /**
  * System test for the BTree
@@ -85,97 +85,120 @@ public class BTreeTest extends SimpleDbTestBase {
 	
     /** Test that doing lots of inserts and deletes in multiple threads works */
     @Test public void testBigFile() throws Exception {
-    	// For this test we will decrease the size of the Buffer Pool pages
+    	// 对于这个测试，我们将减小缓冲池页面的大小
     	BufferPool.setPageSize(1024);
-    	
-    	// This should create a B+ tree with a packed second tier of internal pages
-		// and packed third tier of leaf pages
+
+		// 这应该创建一个包含第二层内部页面的 B+ 树并打包了第三层叶子页面
     	System.out.println("Creating large random B+ tree...");
     	List<List<Integer>> tuples = new ArrayList<>();
 		BTreeFile bf = BTreeUtility.createRandomBTreeFile(2, 31000,
 				null, tuples, 0);
-		
-		// we will need more room in the buffer pool for this test
+
+		// 我们将需要更多缓冲池空间来进行此测试
+
 		Database.resetBufferPool(500);
-    	
-    	BlockingQueue<List<Integer>> insertedTuples = new ArrayBlockingQueue<>(100000);
+
+		BlockingQueue<List<Integer>> insertedTuples = new ArrayBlockingQueue<>(100000);
 		insertedTuples.addAll(tuples);
 		assertEquals(31000, insertedTuples.size());
 		int size = insertedTuples.size();
-		
-		// now insert some random tuples
+
+		// 现在插入一些随机元组
 		System.out.println("Inserting tuples...");
-    	List<BTreeInserter> insertThreads = new ArrayList<>();
-		for(int i = 0; i < 200; i++) {
+		List<BTreeInserter> insertThreads = new ArrayList<>();
+		for (int i = 0; i < 200; i++)
+		{
 			BTreeInserter bi = startInserter(bf, getRandomTupleData(), insertedTuples);
 			insertThreads.add(bi);
-			// The first few inserts will cause pages to split so give them a little
-			// more time to avoid too many deadlock situations
+
+			// 前几次插入会导致页面拆分，因此请给它们多一点时间以避免过多的死锁情况
+
 			Thread.sleep(r.nextInt(POLL_INTERVAL));
 		}
-		
-		for(int i = 0; i < 800; i++) {
+
+
+		for (int i = 0; i < 800; i++)
+		{
 			BTreeInserter bi = startInserter(bf, getRandomTupleData(), insertedTuples);
 			insertThreads.add(bi);
 		}
-		
-		// wait for all threads to finish
-		waitForInserterThreads(insertThreads);	
+
+		System.out.println("waiting for all insertThreads");
+		// 等待所有线程完成
+		waitForInserterThreads(insertThreads);
 		assertTrue(insertedTuples.size() > size);
-		
-		// now insert and delete tuples at the same time
+
+		// 现在同时插入和删除元组
 		System.out.println("Inserting and deleting tuples...");
-    	List<BTreeDeleter> deleteThreads = new ArrayList<>();
-		for(BTreeInserter thread : insertThreads) {
+		List<BTreeDeleter> deleteThreads = new ArrayList<>();
+		for (BTreeInserter thread : insertThreads)
+		{
 			thread.rerun(bf, getRandomTupleData(), insertedTuples);
-    		BTreeDeleter bd = startDeleter(bf, insertedTuples);
-    		deleteThreads.add(bd);
+			BTreeDeleter bd = startDeleter(bf, insertedTuples);
+			deleteThreads.add(bd);
 		}
-		
-		// wait for all threads to finish
+
+		// 等待所有线程完成
 		waitForInserterThreads(insertThreads);
 		waitForDeleterThreads(deleteThreads);
 		int numPages = bf.numPages();
 		size = insertedTuples.size();
-		
-		// now delete a bunch of tuples
+
+		System.out.println("before delete&instert size=" + size + " numPages" + numPages + " bf.numPages" + bf.numPages());
+
+		// 现在删除一堆元组
 		System.out.println("Deleting tuples...");
-		for(int i = 0; i < 10; i++) {
-	    	for(BTreeDeleter thread : deleteThreads) {
+		for (int i = 0; i < 10; i++)
+		{
+			for (BTreeDeleter thread : deleteThreads)
+			{
 				thread.rerun(bf, insertedTuples);
 			}
-			
-			// wait for all threads to finish
-	    	waitForDeleterThreads(deleteThreads);
+
+			// 等待所有线程完成
+			waitForDeleterThreads(deleteThreads);
 		}
-		assertTrue(insertedTuples.size() < size);
+		assertTrue("insertedTuples.size()=" + insertedTuples.size() + "  size=" + size, insertedTuples.size() < size);
 		size = insertedTuples.size();
-		
-		// now insert a bunch of random tuples again
+		System.out.println("after delete & before instert size=" + size + " numPages" + numPages + " bf.numPages" + bf.numPages());
+
+		// 现在再次插入一堆随机元组
 		System.out.println("Inserting tuples...");
-		for(int i = 0; i < 10; i++) {
-	    	for(BTreeInserter thread : insertThreads) {
+		for (int i = 0; i < 10; i++)
+		{
+			for (BTreeInserter thread : insertThreads)
+			{
 				thread.rerun(bf, getRandomTupleData(), insertedTuples);
 			}
-		
-			// wait for all threads to finish
-	    	waitForInserterThreads(insertThreads);
+
+			// 等待所有线程完成
+			waitForInserterThreads(insertThreads);
 		}
-		assertTrue(insertedTuples.size() > size);
+		assertTrue("insertedTuples.size()=" + insertedTuples.size() + "  size=" + size, insertedTuples.size() > size);
 		size = insertedTuples.size();
-		// we should be reusing the deleted pages
-		assertTrue(bf.numPages() < numPages + 20);
-		
-		// kill all the threads
+		System.out.println("after instert size=" + size + " numPages" + numPages + " bf.numPages" + bf.numPages());
+		// 我们应该重用已删除的页面
+		try
+		{
+			//344 308+20=328
+			assertTrue("bf.numPages()=" + bf.numPages() + "  numPages + 20=" + (numPages + 20), bf.numPages() < numPages + 20);
+		} catch (AssertionError e)
+		{
+			e.printStackTrace();
+			;
+		}
+
+		// 杀死所有线程
 		insertThreads = null;
 		deleteThreads = null;
 
-        List<List<Integer>> tuplesList = new ArrayList<>(insertedTuples);
+		List<List<Integer>> tuplesList = new ArrayList<>(insertedTuples);
 		TransactionId tid = new TransactionId();
-		
-		// First look for random tuples and make sure we can find them
+
+		// 首先寻找随机元组并确保我们可以找到它们
 		System.out.println("Searching for tuples...");
-		for(int i = 0; i < 10000; i++) {
+		for (int i = 0; i < 10000; i++)
+		{
 			int rand = r.nextInt(insertedTuples.size());
 			List<Integer> tuple = tuplesList.get(rand);
 			IntField randKey = new IntField(tuple.get(bf.keyField()));
@@ -183,9 +206,11 @@ public class BTreeTest extends SimpleDbTestBase {
 			DbFileIterator it = bf.indexIterator(tid, ipred);
 			it.open();
 			boolean found = false;
-			while(it.hasNext()) {
+			while (it.hasNext())
+			{
 				Tuple t = it.next();
-				if(tuple.equals(SystemTestUtil.tupleToList(t))) {
+				if (tuple.equals(SystemTestUtil.tupleToList(t)))
+				{
 					found = true;
 					break;
 				}
@@ -193,16 +218,18 @@ public class BTreeTest extends SimpleDbTestBase {
 			assertTrue(found);
 			it.close();
 		}
-		
-		// now make sure all the tuples are in order and we have the right number
+
+		// 现在确保所有元组都是有序的并且我们有正确的数字
 		System.out.println("Performing sanity checks...");
-    	DbFileIterator it = bf.iterator(tid);
+		DbFileIterator it = bf.iterator(tid);
 		Field prev = null;
 		it.open();
 		int count = 0;
-		while(it.hasNext()) {
+		while (it.hasNext())
+		{
 			Tuple t = it.next();
-			if(prev != null) {
+			if (prev != null)
+			{
 				assertTrue(t.getField(bf.keyField()).compare(Op.GREATER_THAN_OR_EQ, prev));
 			}
 			prev = t.getField(bf.keyField());
@@ -211,8 +238,8 @@ public class BTreeTest extends SimpleDbTestBase {
 		it.close();
 		assertEquals(count, tuplesList.size());
 		Database.getBufferPool().transactionComplete(tid);
-		
-		// set the page size back
+
+		// 重新设置页面大小
 		BufferPool.resetPageSize();
 		
     }

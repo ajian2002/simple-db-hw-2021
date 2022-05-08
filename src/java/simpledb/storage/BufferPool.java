@@ -84,10 +84,12 @@ public class BufferPool {
         {
             switch (perm)
             {
-                case READ_ONLY -> {
+                case READ_ONLY ->
+                {
                     lockManager.getReadLock(pid, tid);
                 }
-                case READ_WRITE -> {
+                case READ_WRITE ->
+                {
                     lockManager.getWriteLock(pid, tid);
                 }
             }
@@ -95,9 +97,6 @@ public class BufferPool {
         {
             LogPrint.print("[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":事务中断");
             throw e;
-            //            transactionComplete(tid, false);
-            //            System.out.println("[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":事务中断,锁释放完成");
-            //            return null;
         }
 
         return justGetPage(pid);
@@ -181,10 +180,16 @@ public class BufferPool {
             //恢复脏页面
             //            lockManager.getPagesByTid(tid).forEach(this::discardPage);
             //放锁
-            lockManager.getPagesByTid(tid).forEach(pid -> {
-                discardPage(pid);
+            LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":开始回滚事务");
+            var lists = lockManager.getPagesByTid(tid);
+            for (PageId pid : lists)
+            {
+                LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":releaseLock PID" + pid.getPageNumber());
                 unsafeReleasePage(tid, pid);
-            });
+                LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":releaseLock PID" + pid.getPageNumber() + " OK");
+                discardPage(pid);
+                LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":pageManager.delete PID" + pid.getPageNumber());
+            }
         }
     }
 
@@ -286,28 +291,32 @@ public class BufferPool {
     public void flushPages(TransactionId tid) throws IOException {
         var values = lockManager.getPagesByTid(tid);
         //        LogPrint.print("[" + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + "size=" + values.size());
-        for (PageId pid : values)
+        if (values.size() != 0)
         {
-            try
-            {
-                var p = pagesManager.get(pid);
 
-                //                assertNotNull("p 没了", p);
-                if (p == null)
-                {
-                    LogPrint.print("p没了");
-                    continue;
-                }
-
-                // 脏
-                LogPrint.print("[" + "pn=" + p.getId().getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + " 事物关联页" + p.getId().getPageNumber() + " " + ((p.isDirty() != null) ? "脏" : "不脏"));
-                if (p.isDirty() != null)
-                {
-                    flushPage(pid);
-                }
-            } catch (IOException e)
+            for (PageId pid : values)
             {
-                e.printStackTrace();
+                try
+                {
+                    var p = pagesManager.get(pid);
+
+                    //                assertNotNull("p 没了", p);
+                    if (p == null)
+                    {
+                        LogPrint.print("p没了");
+                        continue;
+                    }
+
+                    // 脏
+                    LogPrint.print("[" + "pn=" + p.getId().getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + " 事物关联页" + p.getId().getPageNumber() + " " + ((p.isDirty() != null) ? "脏" : "不脏"));
+                    if (p.isDirty() != null)
+                    {
+                        flushPage(pid);
+                    }
+                } catch (IOException e)
+                {
+                    e.printStackTrace();
+                }
             }
         }
 
@@ -346,20 +355,27 @@ public class BufferPool {
 
         public Page get(PageId pid) {
             if (pid == null) return null;
-            var pa = pages.get(pid);
-            if (pa == null) return null;
-            var pp = times.get(pa.time);
-            times.put(System.currentTimeMillis(), pp);
-            times.remove(pa.time);
-            return pa.page;
+
+            synchronized (this)
+            {
+                var pa = pages.get(pid);
+                if (pa == null) return null;
+                var pp = times.get(pa.time);
+                times.put(System.currentTimeMillis(), pp);
+                times.remove(pa.time);
+                return pa.page;
+            }
         }
 
         public synchronized void put(Page page) throws DbException {
             if (page == null) return;
             var time = System.currentTimeMillis();
             if (!pages.containsKey(page.getId())) if (pages.size() == numPages) evictPage();
-            pages.put(page.getId(), new PageAndTime(time, page, page.getId()));
-            times.put(time, page.getId());
+            synchronized (this)
+            {
+                pages.put(page.getId(), new PageAndTime(time, page, page.getId()));
+                times.put(time, page.getId());
+            }
         }
 
         public void putAll(Collection<? extends Page> p) throws DbException {
@@ -376,14 +392,18 @@ public class BufferPool {
             pages.remove(pageId);
         }
 
-        public void forEachPageId(Consumer<PageId> action) {
+        public synchronized void forEachPageId(Consumer<PageId> action) {
             if (action == null) return;
             pages.keySet().forEach(action);
         }
 
-        public void forEachPageAndTime(Consumer<PageAndTime> action) {
+        public synchronized void forEachPageAndTime(Consumer<PageAndTime> action) {
             if (action == null) return;
-            pages.values().forEach(action);
+            var values = pages.values();
+
+            values.forEach(action);
+
+
         }
 
         public PageId getLRUPage() {
@@ -395,12 +415,17 @@ public class BufferPool {
             return null;
         }
 
-        public PageId getNotDirtyLRUPage() throws DbException {
+        public synchronized PageId getNotDirtyLRUPage() throws DbException {
             boolean allDirty = false;
-            for (PageAndTime pageAndTime : pages.values())
+            var values = pages.values();
+            for (PageAndTime pageAndTime : values)
             {
                 PageId e = pageAndTime.id;
-                if (pages.get(e).page.isDirty() == null) return e;
+                var value = pages.get(e);
+                if (value != null)
+                {
+                    if (value.page.isDirty() == null) return e;
+                }
                 allDirty = true;
             }
             if (allDirty)
@@ -408,6 +433,7 @@ public class BufferPool {
                 throw new DbException("all page is dirty");
             }
             return null;
+
         }
 
         private class PageAndTime {

@@ -326,20 +326,19 @@ public class BTreeFile implements DbFile {
         var pp = newPage.iterator();
         if (pp.hasNext()) firstTuple = pp.next();
         else throw new DbException("newPage is empty");
-
-        //getParent&&copy
         var newParent = getParentWithEmptySlots(tid, dirtypages, currentPage.getParentId(), firstTuple.getField(keyField()));
-        newParent.insertEntry(new BTreeEntry(firstTuple.getField(keyField()), currentPage.getId(), newPage.getId()));
+        dirtypages.put(newParent.getId(), newParent);
 
-
-        //set Left&Right
         BTreeLeafPage rr = currentPage.getRightSiblingId() == null ? null : (BTreeLeafPage) getPage(tid, dirtypages, currentPage.getRightSiblingId(), Permissions.READ_WRITE);
+        if (rr != null) rr.setLeftSiblingId(newPage.getId());
+        newPage.setRightSiblingId(rr != null ? rr.getId() : null);
         currentPage.setRightSiblingId(newPage.getId());
         newPage.setLeftSiblingId(currentPage.getId());
-        newPage.setRightSiblingId(rr != null ? rr.getId() : null);
-        if (rr != null) rr.setLeftSiblingId(newPage.getId());
-        updateParentPointer(tid, dirtypages, newParent.getId(), currentPage.getId());
-        updateParentPointer(tid, dirtypages, newParent.getId(), newPage.getId());
+
+
+        //getParent&&copy
+
+        newParent.insertEntry(new BTreeEntry(firstTuple.getField(keyField()), currentPage.getId(), newPage.getId()));
         updateParentPointers(tid, dirtypages, newParent);
         if (field.compare(Op.LESS_THAN_OR_EQ, firstTuple.getField(keyField()))) return currentPage;
         else return newPage;
@@ -960,30 +959,19 @@ public class BTreeFile implements DbFile {
         //         删除与正在合并的两个页面对应的父项中的条目 -
         //         deleteParentEntry() 在这里很有用
 
-        deleteParentEntry(tid, dirtypages, leftPage, parent, parentEntry);
-
         var it = rightPage.iterator();
-        ArrayList<Tuple> listsInfo = new ArrayList<>();
         while (it.hasNext())
         {
-            listsInfo.add(it.next());
-        }
-        listsInfo.forEach(t -> {
-            try
-            {
+            var t = it.next();
                 rightPage.deleteTuple(t);
                 leftPage.insertTuple(t);
-            } catch (DbException e)
-            {
-                e.printStackTrace();
             }
-        });
 
         if (rightPage.getRightSiblingId() != null)
         {
             BTreeLeafPage rr = (BTreeLeafPage) getPage(tid, dirtypages, rightPage.getRightSiblingId(), Permissions.READ_WRITE);
-            leftPage.setRightSiblingId(rr.getId());
             rr.setLeftSiblingId(leftPage.getId());
+            leftPage.setRightSiblingId(rr.getId());
         }
         else
         {
@@ -991,15 +979,11 @@ public class BTreeFile implements DbFile {
         }
         dirtypages.put(rightPage.getId(), rightPage);
         setEmptyPage(tid, dirtypages, rightPage.getId().getPageNumber());
-        if (leftPage.getParentId().equals(parent.getId()))
-        {
+
+        dirtypages.put(parent.getId(), parent);
             updateParentPointer(tid, dirtypages, parent.getId(), leftPage.getId());
-        }
-        else
-        {
-            dirtypages.put(parent.getId(), parent);
-            setEmptyPage(tid, dirtypages, parent.getId().getPageNumber());
-        }
+        deleteParentEntry(tid, dirtypages, leftPage, parent, parentEntry);
+
     }
 
     /**
@@ -1029,41 +1013,34 @@ public class BTreeFile implements DbFile {
         //         删除与正在合并的两个页面对应的父项中的条目 -
         //         deleteParentEntry() 在这里很有用
 
+        dirtypages.put(rightPage.getId(), rightPage);
+        dirtypages.put(leftPage.getId(), leftPage);
+        dirtypages.put(parent.getId(), parent);
+        var pp = new BTreeEntry(parentEntry.getKey(), leftPage.reverseIterator().next().getRightChild(), rightPage.iterator().next().getLeftChild());
+        leftPage.insertEntry(pp);
 
-        deleteParentEntry(tid, dirtypages, leftPage, parent, parentEntry);
         var it = rightPage.iterator();
         ArrayList<BTreeEntry> listsInfo = new ArrayList<>();
         while (it.hasNext())
         {
-            listsInfo.add(it.next());
-        }
-
-        var pp = new BTreeEntry(parentEntry.getKey(), leftPage.reverseIterator().next().getRightChild(), rightPage.iterator().next().getLeftChild());
-        leftPage.insertEntry(pp);
-
-        listsInfo.forEach(t -> {
-            try
-            {
+            var t = it.next();
                 rightPage.deleteKeyAndLeftChild(t);
                 leftPage.insertEntry(t);
-            } catch (DbException e)
-            {
-                e.printStackTrace();
             }
-        });
-        dirtypages.put(rightPage.getId(), rightPage);
-        setEmptyPage(tid, dirtypages, rightPage.getId().getPageNumber());
-        if (leftPage.getParentId().equals(parent.getId()))
-        {
-            updateParentPointers(tid, dirtypages, parent);
-            updateParentPointer(tid, dirtypages, parent.getId(), leftPage.getId());
-        }
-        else
-        {
-            dirtypages.put(parent.getId(), parent);
-            setEmptyPage(tid, dirtypages, parent.getId().getPageNumber());
-        }
         updateParentPointers(tid, dirtypages, leftPage);
+        setEmptyPage(tid, dirtypages, rightPage.getId().getPageNumber());
+        deleteParentEntry(tid, dirtypages, leftPage, parent, parentEntry);
+            updateParentPointers(tid, dirtypages, parent);
+        //        if (leftPage.getParentId().equals(parent.getId()))
+        //        {
+        //            updateParentPointers(tid, dirtypages, parent);
+        //            updateParentPointer(tid, dirtypages, parent.getId(), leftPage.getId());
+        //        }
+        //        else
+        //        {
+        //            dirtypages.put(parent.getId(), parent);
+        //            setEmptyPage(tid, dirtypages, parent.getId().getPageNumber());
+        //        }
 
     }
 

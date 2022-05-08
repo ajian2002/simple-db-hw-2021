@@ -15,6 +15,7 @@ public class LockManager {
 
 
     private final Map<PageId, Data> dataLockMap = Collections.synchronizedMap(new HashMap<>());
+    public final Map<TransactionId, Set<PageId>> tidLockMap = Collections.synchronizedMap(new HashMap<>());
 
     private Data getData(PageId pid) {
         if (pid == null) return null;
@@ -43,6 +44,21 @@ public class LockManager {
         var lockStatus = getLockStatus(pid);
         LockStatus temp = null;
         boolean has = false;
+        synchronized (tidLockMap)
+        {
+            if (!tidLockMap.containsKey(tid))
+            {
+                var newList = Collections.synchronizedSet(new HashSet<PageId>());
+                newList.add(pid);
+                tidLockMap.put(tid, newList);
+            }
+            else
+            {
+                var oldList = tidLockMap.get(tid);
+                oldList.add(pid);
+                //                tidLockMap.put(tid, oldList);
+            }
+        }
         synchronized (lockStatus)//锁链遍历查找
         {
             for (LockStatus ls : lockStatus)
@@ -90,6 +106,24 @@ public class LockManager {
         var lockStatus = getLockStatus(pid);
         LockStatus temp = null;
         boolean has = false;
+        synchronized (tidLockMap)
+        {
+            if (!tidLockMap.containsKey(tid))
+            {
+                var newList = Collections.synchronizedSet(new HashSet<PageId>());
+                newList.add(pid);
+                tidLockMap.put(tid, newList);
+            }
+            else
+            {
+                var oldList = tidLockMap.get(tid);
+                synchronized (oldList)
+                {
+                    oldList.add(pid);
+                }
+                //                tidLockMap.put(tid, oldList);
+            }
+        }
         synchronized (lockStatus)//锁链遍历查找
         {
             for (LockStatus ls : lockStatus)
@@ -124,6 +158,7 @@ public class LockManager {
 
 
     public void releaseReadWriteLock(PageId pid, TransactionId tid) {
+
         var lockStatus = getLockStatus(pid);
         synchronized (lockStatus)
         {
@@ -133,20 +168,18 @@ public class LockManager {
                 {
                     if (tid.equals(ls.tid))
                     {
-                        if (ls.gettedLock)
+                        //                        if (ls.gettedLock)
                         {
-                            try
-                            {
-                                ls.lock.unlock(tid);
-                                LogPrint.print("[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":释放" + (ls.gettedLock && ls.isReadLock ? "读锁" : ls.gettedLock && ls.isWriteLock ? "写锁" : "未知锁"));
-                            } catch (Exception e)
-                            {
-                                e.printStackTrace();
-                            }
+                            //                            ls.lock.unlock(tid);
+                            ls.d.unlock(tid);
+                            //?
+                            LogPrint.print("[" + "pn=" + pid.getPageNumber() + ":" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":释放" + (ls.gettedLock && ls.isReadLock ? "读锁" : ls.gettedLock && ls.isWriteLock ? "写锁" : "未知锁"));
                         }
-                        synchronized (lockStatus)
+                        lockStatus.remove(ls);
+
+                        synchronized (tidLockMap.get(tid))
                         {
-                            lockStatus.remove(ls);
+                            tidLockMap.get(tid).remove(pid);
                         }
                         break;
                     }
@@ -195,29 +228,37 @@ public class LockManager {
     }
 
     public List<PageId> getPagesByTid(TransactionId tid) {
-        List<PageId> pages = new ArrayList<PageId>();
-        synchronized (dataLockMap)
+        //        List<PageId> pages = new ArrayList<PageId>();
+        //        synchronized (dataLockMap)
+        //        {
+        //            for (Data e : dataLockMap.values())
+        //            {
+        //                var lockStatus = e.getLists();
+        //                synchronized (lockStatus)
+        //                {
+        //                    for (LockStatus ls : lockStatus)
+        //                    {
+        //
+        //                        if (ls.gettedLock && ls.tid.equals(tid))
+        //                        {
+        //                            pages.add(e.getPid());
+        //                            break;
+        //                        }
+        //
+        //                    }
+        //                }
+        //            }
+        //        }
+        synchronized (tidLockMap)
         {
-            for (Data e : dataLockMap.values())
+            ArrayList<PageId> newList = new ArrayList<>();
+            if (tidLockMap.containsKey(tid))
             {
-                var lockStatus = e.getLists();
-                synchronized (lockStatus)
-                {
-                    for (LockStatus ls : lockStatus)
-                    {
-                        synchronized (ls)
-                        {
-                            if (ls.gettedLock && ls.tid.equals(tid))
-                            {
-                                pages.add(e.getPid());
-                                break;
-                            }
-                        }
-                    }
-                }
+                newList.addAll(tidLockMap.get(tid));
             }
+            return newList;
         }
-        return pages;
+        //        return pages;
     }
 
     private void BlockLock(LockManager.Data data, TransactionId tid, LockStatus temp, String s, boolean write) throws TransactionAbortedException {
@@ -358,6 +399,10 @@ public class LockManager {
 
         public Lock getWlock() {
             return lock.writeLock();
+        }
+
+        public void unlock(TransactionId tid) {
+            lock.UnlockALL(tid);
         }
     }
 }
