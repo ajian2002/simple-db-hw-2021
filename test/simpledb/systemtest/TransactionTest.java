@@ -1,18 +1,5 @@
 package simpledb.systemtest;
 
-import org.junit.Test;
-import simpledb.common.Database;
-import simpledb.common.DbException;
-import simpledb.execution.Delete;
-import simpledb.execution.Insert;
-import simpledb.execution.Query;
-import simpledb.execution.SeqScan;
-import simpledb.storage.*;
-import simpledb.transaction.Transaction;
-import simpledb.transaction.TransactionAbortedException;
-import simpledb.transaction.TransactionId;
-import simpledb.utils.LogPrint;
-
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -23,8 +10,20 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
+import org.junit.Test;
+
+import simpledb.common.Database;
+import simpledb.common.DbException;
+import simpledb.execution.Delete;
+import simpledb.execution.Insert;
+import simpledb.execution.Query;
+import simpledb.execution.SeqScan;
+import simpledb.storage.*;
+import simpledb.transaction.Transaction;
+import simpledb.transaction.TransactionAbortedException;
+import simpledb.transaction.TransactionId;
+
+import static org.junit.Assert.*;
 
 /**
  * Tests running concurrent transactions.
@@ -70,7 +69,7 @@ public class TransactionTest extends SimpleDbTestBase {
             assert tester.completed;
         }
 
-        // 检查表的值是否正确
+        // Check that the table has the correct value
         TransactionId tid = new TransactionId();
         DbFileIterator it = table.iterator(tid);
         it.open();
@@ -96,7 +95,6 @@ public class TransactionTest extends SimpleDbTestBase {
             try {
                 // Try to increment the value until we manage to successfully commit
                 while (true) {
-                    // int a, b, c;
                     // Wait for all threads to be ready
                     latch.await();
                     Transaction tr = new Transaction();
@@ -111,12 +109,11 @@ public class TransactionTest extends SimpleDbTestBase {
                         Tuple tup = q1.next();
                         IntField intf = (IntField) tup.getField(0);
                         int i = intf.getValue();
-                        LogPrint.print("---[" + "tid=" + tr.getId().getId() % 100 + "]" + Thread.currentThread().getName() + "    before   " + i);
 
                         // create a Tuple so that Insert can insert this new value
                         // into the table.
                         Tuple t = new Tuple(SystemTestUtil.SINGLE_INT_DESCRIPTOR);
-                        t.setField(0, new IntField(i + 1));
+                        t.setField(0, new IntField(i+1));
 
                         // sleep to get some interesting thread interleavings
                         Thread.sleep(1);
@@ -133,7 +130,7 @@ public class TransactionTest extends SimpleDbTestBase {
                         q2.next();
                         q2.close();
 
-                        // 使用比旧的元组高一个的元组设置一个 Set。
+                        // set up a Set with a tuple that is one higher than the old one.
                         Set<Tuple> hs = new HashSet<>();
                         hs.add(t);
                         TupleIterator ti = new TupleIterator(t.getTupleDesc(), hs);
@@ -144,26 +141,8 @@ public class TransactionTest extends SimpleDbTestBase {
                         q3.start();
                         q3.next();
                         q3.close();
+
                         tr.commit();
-                        LogPrint.print("---[" + "tid=" + tr.getId().getId() % 100 + "]" + Thread.currentThread().getName() + "    after-ok   " + t.getField(0));
-                        // b = Integer.parseInt(t.getField(0).toString());
-                        // tr.start();
-                        // ss1 = new SeqScan(tr.getId(), tableId, "");
-                        // q1 = new Query(ss1, tr.getId());
-                        // q1.start();
-                        // tup = q1.next();
-                        // intf = (IntField) tup.getField(0);
-                        // i = intf.getValue();
-                        // tr.commit();
-                        // LogPrint.print(1, "---[" + "tid=" + tr.getId().getId() % 100 + "]" + Thread.currentThread().getName() + "    again   " + i);
-                        //                        try
-                        //                        {
-                        //                            assertEquals(b, i);
-                        //                        } catch (AssertionError e)
-                        //                        {
-                        //                            System.out.println("断言错误");
-                        //                            System.exit(-1);
-                        //                        }
                         break;
                     } catch (TransactionAbortedException te) {
                         //System.out.println("thread " + tr.getId() + " killed");
