@@ -493,6 +493,7 @@ public class LogFile {
             synchronized (this)
             {
                 preAppend();
+                long current = raf.getFilePointer();
                 var off = findBeginUnCommit(tid);
                 if (off == -1) throw new RuntimeException("off = -1 " + " tid=" + tid);
                 raf.seek(off);
@@ -521,7 +522,7 @@ public class LogFile {
                             {
                                 if (open != 1) System.out.println("update but open !=1");
                                 else
-                                    Database.getCatalog().getDatabaseFile(before.getId().getTableId()).writePage(before);
+                                    Database.getCatalog().getDatabaseFile(after.getId().getTableId()).writePage(before);
                             }
                         }
                         case BEGIN_RECORD ->
@@ -554,6 +555,7 @@ public class LogFile {
 
                     }
                 }
+                raf.seek(current);
             }
         }
     }
@@ -587,71 +589,149 @@ public class LogFile {
             {
                 recoveryUndecided = false;
                 // some code goes here
-                //                raf.seek(0);
-                //                long recover = raf.readLong();
-                //                if (recover != -1) raf.seek(recover);
-                //
-                //                while (true)
-                //                {
-                //                    try
-                //                    {
-                //                        int cpType = raf.readInt();
-                //                        long cpTid = raf.readLong();
-                //
-                //                        switch (cpType)
-                //                        {
-                //                            case BEGIN_RECORD ->
-                //                            {
-                //                                var temp = raf.readLong();
-                //                                tidToFirstLogRecord.put(cpTid, temp);
-                //                            }
-                //                            case ABORT_RECORD ->
-                //                            {
-                //                                raf.readLong();
-                //                                rollback(cpTid);
-                //                                tidToFirstLogRecord.remove(cpTid);
-                //                            }
-                //                            case COMMIT_RECORD ->
-                //                            {
-                //                                raf.readLong();
-                //                                //redo
-                //                                redo(cpTid);
-                //                                tidToFirstLogRecord.remove(cpTid);
-                //                            }
-                //                            case CHECKPOINT_RECORD ->
-                //                            {
-                //                                int numTransactions = raf.readInt();
-                //                                while (numTransactions-- > 0)
-                //                                {
-                //                                    long ttid = raf.readLong();
-                //                                    long firstRecord = raf.readLong();
-                //                                    tidToFirstLogRecord.put(ttid, firstRecord);
-                //                                }
-                //                                raf.readLong();
-                //                            }
-                //                            case UPDATE_RECORD ->
-                //                            {
-                //                                //continue
-                //                                Page before = readPageData(raf);
-                //                                Page after = readPageData(raf);
-                //                                raf.readLong();
-                //                            }
-                //                        }
-                //
-                //                    } catch (EOFException e)
-                //                    {
-                //                        //                    e.printStackTrace();
-                //                        break;
-                //                    }
-                //                }
+                long current = raf.getFilePointer();
+                print();
+                raf.seek(0);
+                long recover = raf.readLong();
+                if (recover != -1) raf.seek(recover);
+                while (true)
+                {
+                    try
+                    {
+                        int cpType = raf.readInt();
+                        long cpTid = raf.readLong();
 
+                        switch (cpType)
+                        {
+                            case BEGIN_RECORD ->
+                            {
+                                var temp = raf.readLong();
+                                tidToFirstLogRecord.put(cpTid, temp);
+                            }
+                            case ABORT_RECORD ->
+                            {
+                                raf.readLong();
+                                //undo
+                                rollback(cpTid);
+                                System.out.println("rollback " + cpTid + " ok");
+                                tidToFirstLogRecord.remove(cpTid);
+                            }
+                            case COMMIT_RECORD ->
+                            {
+                                raf.readLong();
+                                //redo
+                                redo(cpTid);
+                                System.out.println("redo " + cpTid + " ok");
+                                tidToFirstLogRecord.remove(cpTid);
+                            }
+                            case CHECKPOINT_RECORD ->
+                            {
+                                int numTransactions = raf.readInt();
+                                while (numTransactions-- > 0)
+                                {
+                                    long ttid = raf.readLong();
+                                    long firstRecord = raf.readLong();
+                                    tidToFirstLogRecord.put(ttid, firstRecord);
+                                }
+                                raf.readLong();
+                            }
+                            case UPDATE_RECORD ->
+                            {
+                                //continue
+                                Page before = readPageData(raf);
+                                Page after = readPageData(raf);
+                                raf.readLong();
+                            }
+                        }
+
+                    } catch (EOFException e)
+                    {
+                        //                    e.printStackTrace();
+                        break;
+                    }
+                }
+
+                raf.seek(current);
             }
         }
 
 
     }
 
-    private void redo(long cpTid) {
+    private void redo(long tid) throws NoSuchElementException, IOException {
+        synchronized (Database.getBufferPool())
+        {
+            synchronized (this)
+            {
+                preAppend();
+                long current = raf.getFilePointer();
+                var off = findBeginCommit(tid);
+                if (off == -1) throw new RuntimeException("off = -1 " + " tid=" + tid);
+                raf.seek(off);
+                int open = 0;
+                while (open != -1)
+                {
+                    var type = raf.readInt();
+                    long cpTid = raf.readLong();
+                    switch (type)
+                    {
+                        case ABORT_RECORD ->
+                        {
+                            if (tid == cpTid)
+                            {
+                                System.out.println("???????");
+                            }
+                            raf.readLong();
+                        }
+                        case UPDATE_RECORD ->
+                        {
+                            var before = readPageData(raf);
+                            var after = readPageData(raf);
+                            raf.readLong();
+                            if (cpTid == tid)
+                            {
+                                if (open != 1) System.out.println("update but open !=1");
+                                else
+                                {
+                                    Database.getCatalog().getDatabaseFile(before.getId().getTableId()).writePage(after);
+                                    after.setBeforeImage();
+                                }
+                            }
+                        }
+                        case BEGIN_RECORD ->
+                        {
+                            if (tid == cpTid)
+                            {
+                                if (open == 0) open = 1;
+                                else System.out.println("begin but not fitst");
+                            }
+                            raf.readLong();
+                        }
+                        case COMMIT_RECORD ->
+                        {
+                            if (tid == cpTid)
+                            {
+                                if (open == 1) open = -1;
+                                else System.out.println("abort but open !=1");
+                            }
+                            raf.readLong();
+                        }
+                        case CHECKPOINT_RECORD ->
+                        {
+                            int numTransactions = raf.readInt();
+                            while (numTransactions-- > 0)
+                            {
+                                raf.readLong();
+                                raf.readLong();
+                            }
+                            raf.readLong();
+                        }
+
+                    }
+                }
+                raf.seek(current);
+            }
+        }
 
     }
 
@@ -765,32 +845,19 @@ public class LogFile {
                 {
                     int cpType = raf.readInt();
                     long cpTid = raf.readLong();
-
                     switch (cpType)
                     {
                         case BEGIN_RECORD:
-                            if (cpTid == tid)
-                            {
-                                last = raf.readLong();
-                                System.out.println("last=" + last);
-                            }
+                            if (cpTid == tid) last = raf.readLong();
                             else raf.readLong();
                             break;
                         case ABORT_RECORD:
-
                             var t = raf.readLong();
-                            if (cpTid == tid)
-                            {
-                                return last;
-                            }
+                            if (cpTid == tid) break oo;
                             break;
                         case COMMIT_RECORD:
                             raf.readLong();
-                            if (cpTid == tid)
-                            {
-                                last = -1L;
-                                System.out.println("last=" + last);
-                            }
+                            if (cpTid == tid) last = -1L;
                             break;
                         case CHECKPOINT_RECORD:
                             int numTransactions = raf.readInt();
@@ -798,10 +865,7 @@ public class LogFile {
                             {
                                 long ttid = raf.readLong();
                                 long firstRecord = raf.readLong();
-                                if (ttid == tid)
-                                {
-                                    last = firstRecord;
-                                }
+                                if (ttid == tid) last = firstRecord;
                             }
                             raf.readLong();
                             break;
@@ -827,4 +891,77 @@ public class LogFile {
         raf.seek(current);
         return last;
     }
+
+    private long findBeginCommit(long tid) throws IOException {
+        long current = raf.getFilePointer();
+        long last = -1L;
+        var first = tidToFirstLogRecord.get(tid);
+        try
+        {
+            if (first == null)
+            {
+                raf.seek(0);
+                var point = raf.readLong();
+                if (point != -1) raf.seek(point);
+            }
+            else
+            {
+                raf.seek(first);
+            }
+            oo:
+            while (true)
+            {
+                try
+                {
+                    int cpType = raf.readInt();
+                    long cpTid = raf.readLong();
+
+                    switch (cpType)
+                    {
+                        case BEGIN_RECORD:
+                            if (cpTid == tid) last = raf.readLong();
+                            else raf.readLong();
+                            break;
+                        case ABORT_RECORD:
+                            var t = raf.readLong();
+                            if (cpTid == tid) last = -1L;
+                            break;
+                        case COMMIT_RECORD:
+                            raf.readLong();
+                            if (cpTid == tid) break oo;
+                            break;
+                        case CHECKPOINT_RECORD:
+                            int numTransactions = raf.readInt();
+                            while (numTransactions-- > 0)
+                            {
+                                long ttid = raf.readLong();
+                                long firstRecord = raf.readLong();
+                                if (ttid == tid) last = firstRecord;
+                            }
+                            raf.readLong();
+                            break;
+                        case UPDATE_RECORD:
+                            Page before = readPageData(raf);
+                            Page after = readPageData(raf);
+                            raf.readLong();
+                            break;
+                    }
+
+                } catch (EOFException e)
+                {
+                    //                    e.printStackTrace();
+                    break;
+                }
+            }
+
+
+        } catch (IOException e)
+        {
+            throw new RuntimeException(e);
+        }
+        raf.seek(current);
+        return last;
+    }
+
+
 }
