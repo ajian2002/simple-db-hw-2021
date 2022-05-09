@@ -13,7 +13,6 @@ import simpledb.transaction.TransactionId;
 import java.io.*;
 import java.util.*;
 
-import static org.junit.Assert.assertNotNull;
 
 /**
  * BTreeFile is an implementation of a DbFile that stores a B+ tree.
@@ -572,7 +571,6 @@ public class BTreeFile implements DbFile {
         // 找到并锁定与关键字段对应的最左边的叶子页面，
         //         如果没有更多可用的插槽，则拆分叶子页面
         BTreeLeafPage leafPage = findLeafPage(tid, dirtypages, rootId, Permissions.READ_WRITE, t.getField(keyField));
-        assertNotNull(leafPage);
         if (leafPage.getNumEmptySlots() == 0)
         {
             // System.out.println("before splitLeafPage");

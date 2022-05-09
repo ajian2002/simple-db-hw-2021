@@ -144,7 +144,11 @@ public class BufferPool {
         {
             e.printStackTrace();
         }
+
         lockManager.getPagesByTid(tid).forEach(pid -> {
+            var p = pagesManager.get(pid);
+            if (p == null) LogPrint.print("p没了");
+            else p.setBeforeImage();
             unsafeReleasePage(tid, pid);
         });
 
@@ -184,11 +188,18 @@ public class BufferPool {
             var lists = lockManager.getPagesByTid(tid);
             for (PageId pid : lists)
             {
-                LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":releaseLock PID" + pid.getPageNumber());
+                try
+                {
+                    Database.getLogFile().rollback(tid);
+                } catch (IOException e)
+                {
+                    throw new RuntimeException(e);
+                }
+                //                LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":releaseLock PID" + pid.getPageNumber());
                 unsafeReleasePage(tid, pid);
                 LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":releaseLock PID" + pid.getPageNumber() + " OK");
                 discardPage(pid);
-                LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":pageManager.delete PID" + pid.getPageNumber());
+                //                LogPrint.print("[" + "tid=" + tid.getId() % 100 + "]" + Thread.currentThread().getName() + ":pageManager.delete PID" + pid.getPageNumber());
             }
         }
     }
@@ -279,6 +290,12 @@ public class BufferPool {
         var page = pagesManager.get(pid);
         if (page != null)
         {
+            TransactionId dirtier = page.isDirty();
+            if (dirtier != null)
+            {
+                Database.getLogFile().logWrite(dirtier, page.getBeforeImage(), page);
+                Database.getLogFile().force();
+            }
             page.markDirty(false, null);
             Database.getCatalog().getDatabaseFile(page.getId().getTableId()).writePage(page);
         }
