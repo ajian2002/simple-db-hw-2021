@@ -147,6 +147,10 @@ public class LogFile {
      * @param tid The aborting transaction.
      */
     public void logAbort(TransactionId tid) throws IOException {
+        logAbort(tid.getId());
+    }
+
+    private void logAbort(long tid) throws IOException {
         //在继续之前必须有缓冲池锁，因为这调用回滚
 
         synchronized (Database.getBufferPool())
@@ -161,11 +165,11 @@ public class LogFile {
                 // 必须在此处执行此操作，因为回滚仅适用于
                 //                 实时交易（需要 tidToFirstLogRecord）
                 raf.writeInt(ABORT_RECORD);
-                raf.writeLong(tid.getId());
+                raf.writeLong(tid);
                 raf.writeLong(currentOffset);
                 currentOffset = raf.getFilePointer();
                 force();
-                tidToFirstLogRecord.remove(tid.getId());
+                tidToFirstLogRecord.remove(tid);
             }
         }
     }
@@ -547,8 +551,13 @@ public class LogFile {
                             int numTransactions = raf.readInt();
                             while (numTransactions-- > 0)
                             {
-                                raf.readLong();
-                                raf.readLong();
+                                long ttid = raf.readLong();
+                                long firstRecord = raf.readLong();
+                                if (tid == ttid)
+                                {
+                                    if (open == 1) open = -1;
+                                    else System.out.println("abort but open !=1");
+                                }
                             }
                             raf.readLong();
                         }
@@ -590,7 +599,7 @@ public class LogFile {
                 recoveryUndecided = false;
                 // some code goes here
                 long current = raf.getFilePointer();
-                print();
+                //                print();
                 raf.seek(0);
                 long recover = raf.readLong();
                 if (recover != -1) raf.seek(recover);
@@ -634,6 +643,20 @@ public class LogFile {
                                     tidToFirstLogRecord.put(ttid, firstRecord);
                                 }
                                 raf.readLong();
+                                long cu = raf.getFilePointer();
+                                Set<Long> set = new HashSet<Long>(tidToFirstLogRecord.keySet());
+                                for (Long ttid : set)
+                                {
+                                    try
+                                    {
+                                        rollback(ttid);
+                                        tidToFirstLogRecord.remove(ttid);
+                                    } catch (IOException e)
+                                    {
+                                        throw new RuntimeException(e);
+                                    }
+                                }
+                                raf.seek(cu);
                             }
                             case UPDATE_RECORD ->
                             {
@@ -865,7 +888,11 @@ public class LogFile {
                             {
                                 long ttid = raf.readLong();
                                 long firstRecord = raf.readLong();
-                                if (ttid == tid) last = firstRecord;
+                                if (ttid == tid)
+                                {
+                                    last = firstRecord;
+                                    break oo;
+                                }
                             }
                             raf.readLong();
                             break;
