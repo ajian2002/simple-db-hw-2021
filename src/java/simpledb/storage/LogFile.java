@@ -547,7 +547,7 @@ public class LogFile {
                             {
                                 if (open != 1) System.out.println("update but open !=1");
                                 else
-                                    Database.getCatalog().getDatabaseFile(after.getId().getTableId()).writePage(before);
+                                    Database.getCatalog().getDatabaseFile(after.getId().getTableId()).writePage(before.getBeforeImage());
                             }
                         }
                         case BEGIN_RECORD ->
@@ -643,7 +643,7 @@ public class LogFile {
                                 raf.readLong();
                                 //undo
                                 rollback(cpTid);
-                                System.out.println("rollback " + cpTid + " ok");
+                                //                                System.out.println("rollback " + cpTid + " ok");
                                 tidToFirstLogRecord.remove(cpTid);
                             }
                             case COMMIT_RECORD ->
@@ -651,7 +651,7 @@ public class LogFile {
                                 raf.readLong();
                                 //redo
                                 redo(cpTid);
-                                System.out.println("redo " + cpTid + " ok");
+                                //                                System.out.println("redo " + cpTid + " ok");
                                 tidToFirstLogRecord.remove(cpTid);
                             }
                             case CHECKPOINT_RECORD ->
