@@ -296,6 +296,27 @@ public class LogFile {
 
     }
 
+    private void skipReadPage() {
+        try
+        {
+            String pageClassName = raf.readUTF();
+            String idClassName = raf.readUTF();
+            int numIdArgs = raf.readInt();
+            Object[] idArgs = new Object[numIdArgs];
+            for (int i = 0; i < numIdArgs; i++)
+            {
+                idArgs[i] = raf.readInt();
+            }
+            int pageSize = raf.readInt();
+
+            byte[] pageData = new byte[pageSize];
+            raf.read(pageData); //read before image
+
+        } catch (Exception ignore)
+        {
+        }
+    }
+
     /**
      * Write a BEGIN record for the specified transaction
      *
@@ -485,7 +506,7 @@ public class LogFile {
             {
                 preAppend();
                 if (tid == null) throw new NoSuchElementException("tid is null");
-                print();
+                //                print();
                 rollback(tid.getId());
             }
         }
@@ -499,7 +520,7 @@ public class LogFile {
                 preAppend();
                 long current = raf.getFilePointer();
                 var off = findBeginUnCommit(tid);
-                if (off == -1) throw new RuntimeException("off = -1 " + " tid=" + tid);
+                if (off == -1) return;
                 raf.seek(off);
                 int open = 0;
                 while (open != -1)
@@ -647,8 +668,8 @@ public class LogFile {
                             case UPDATE_RECORD ->
                             {
                                 //continue
-                                Page before = readPageData(raf);
-                                Page after = readPageData(raf);
+                              skipReadPage();
+                            skipReadPage();
                                 raf.readLong();
                             }
                         }
@@ -904,8 +925,8 @@ public class LogFile {
                             raf.readLong();
                             break;
                         case UPDATE_RECORD:
-                            Page before = readPageData(raf);
-                            Page after = readPageData(raf);
+                            skipReadPage();
+                            skipReadPage();
                             raf.readLong();
                             break;
                     }
@@ -975,8 +996,8 @@ public class LogFile {
                             raf.readLong();
                             break;
                         case UPDATE_RECORD:
-                            Page before = readPageData(raf);
-                            Page after = readPageData(raf);
+                            skipReadPage();
+                            skipReadPage();
                             raf.readLong();
                             break;
                     }
