@@ -643,20 +643,6 @@ public class LogFile {
                                     tidToFirstLogRecord.put(ttid, firstRecord);
                                 }
                                 raf.readLong();
-                                long cu = raf.getFilePointer();
-                                Set<Long> set = new HashSet<Long>(tidToFirstLogRecord.keySet());
-                                for (Long ttid : set)
-                                {
-                                    try
-                                    {
-                                        rollback(ttid);
-                                        tidToFirstLogRecord.remove(ttid);
-                                    } catch (IOException e)
-                                    {
-                                        throw new RuntimeException(e);
-                                    }
-                                }
-                                raf.seek(cu);
                             }
                             case UPDATE_RECORD ->
                             {
@@ -669,11 +655,29 @@ public class LogFile {
 
                     } catch (EOFException e)
                     {
-                        //                    e.printStackTrace();
+                        //                        e.printStackTrace();
+
                         break;
                     }
                 }
-
+                raf.seek(current);
+                if (tidToFirstLogRecord.size() > 0)
+                {
+                    long cu = raf.getFilePointer();
+                    Set<Long> set = new HashSet<Long>(tidToFirstLogRecord.keySet());
+                    for (Long ttid : set)
+                    {
+                        try
+                        {
+                            rollback(ttid);
+                            tidToFirstLogRecord.remove(ttid);
+                        } catch (IOException ee)
+                        {
+                            break;
+                        }
+                    }
+                    raf.seek(cu);
+                }
                 raf.seek(current);
             }
         }
@@ -687,6 +691,7 @@ public class LogFile {
             synchronized (this)
             {
                 preAppend();
+                ArrayList<Page> listsInfo = new ArrayList<>();
                 long current = raf.getFilePointer();
                 var off = findBeginCommit(tid);
                 if (off == -1) throw new RuntimeException("off = -1 " + " tid=" + tid);
@@ -717,7 +722,7 @@ public class LogFile {
                                 else
                                 {
                                     Database.getCatalog().getDatabaseFile(before.getId().getTableId()).writePage(after);
-                                    after.setBeforeImage();
+                                    listsInfo.add(after);
                                 }
                             }
                         }
@@ -738,6 +743,8 @@ public class LogFile {
                                 else System.out.println("abort but open !=1");
                             }
                             raf.readLong();
+                            listsInfo.forEach(Page::setBeforeImage);
+                            listsInfo.clear();
                         }
                         case CHECKPOINT_RECORD ->
                         {
