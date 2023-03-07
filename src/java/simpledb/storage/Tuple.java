@@ -93,7 +93,8 @@ public class Tuple implements Serializable {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < fields.size(); i++)
         {
-            sb.append(i).append(" ").append(fields.get(i).toString());
+//            sb.append(i).append(" ").append(fields.get(i).toString());
+            sb.append(fields.get(i).toString()).append(" ");
         }
         return sb.toString();
     }
