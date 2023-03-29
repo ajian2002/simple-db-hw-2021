@@ -1,5 +1,8 @@
 package simpledb.storage;
 
+
+import java.util.concurrent.ConcurrentLinkedDeque;
+import org.w3c.dom.Node;
 import simpledb.common.Database;
 import simpledb.common.DbException;
 import simpledb.common.Permissions;
@@ -342,7 +345,6 @@ public class BufferPool {
      * Flushes the page to disk to ensure dirty pages are updated on disk.
      */
     private synchronized void evictPage() throws DbException {
-        //        var pid = pagesManager.getLRUPage();
         PageId pid = pagesManager.getNotDirtyLRUPage();
         if (pid == null) return;
         try
@@ -358,42 +360,58 @@ public class BufferPool {
 
     private class PagesManager {
 
-        private final Map<PageId, PageAndTime> pages;
-        private final Map<Long, PageId> times;
+        private volatile Map<PageId, PageNode> pages;
+        private volatile PageNode head,tail;
         private final int numPages;
 
         public PagesManager(int numPages) {
             this.numPages = numPages;
-            times = new TreeMap<>(Comparator.naturalOrder());
-            pages = Collections.synchronizedMap(new HashMap<>(numPages));
+            pages = new HashMap<>(numPages);
+
+            head=new PageNode();
+            tail=new PageNode();
+            head.next=tail;
+            tail.prev=head;
         }
 
-        public Page get(PageId pid) {
+        public synchronized Page get(PageId pid) {
             if (pid == null) return null;
-
-            synchronized (this)
-            {
-                var pa = pages.get(pid);
-                if (pa == null) return null;
-                var pp = times.get(pa.time);
-                times.put(System.currentTimeMillis(), pp);
-                times.remove(pa.time);
-                return pa.page;
-            }
+            if(!pages.containsKey(pid))return null;
+            var pa = pages.get(pid);
+            removeNode(pa);
+            addFirst(pa);
+            return pa.page;
         }
 
         public synchronized void put(Page page) throws DbException {
             if (page == null) return;
-            var time = System.currentTimeMillis();
-            if (!pages.containsKey(page.getId())) if (pages.size() == numPages) evictPage();
-            synchronized (this)
-            {
-                pages.put(page.getId(), new PageAndTime(time, page, page.getId()));
-                times.put(time, page.getId());
+            PageNode node;
+            if(pages.containsKey(page.getId())){
+              node=pages.get(page.getId());
+              node.page=page;
+              removeNode(node);
+            }else{
+              if (pages.size() == numPages)
+                evictPage();
+              node=new PageNode(page,page.getId());
+              pages.put(page.getId(),node);
             }
+            addFirst(node);
         }
 
-        public void putAll(Collection<? extends Page> p) throws DbException {
+      private synchronized void addFirst(PageNode node) {
+          node.next=head.next;
+          node.prev=head;
+          head.next.prev=node;
+          head.next=node;
+      }
+
+      private synchronized void removeNode(PageNode node) {
+          node.prev.next=node.next;
+          node.next.prev=node.prev;
+      }
+
+      public synchronized void putAll(Collection<? extends Page> p) throws DbException {
             for (Page page : p)
             {
                 put(page);
@@ -401,10 +419,11 @@ public class BufferPool {
         }
 
         public synchronized void delete(PageId pageId) {
-            var pa = pages.get(pageId);
-            if (pa == null) return;
-            times.remove(pa.time);
-            pages.remove(pageId);
+          if(pageId==null)return;
+          var pa = pages.get(pageId);
+          if (pa == null) return;
+          removeNode(pa);
+          pages.remove(pageId);
         }
 
         public synchronized void forEachPageId(Consumer<PageId> action) {
@@ -412,31 +431,18 @@ public class BufferPool {
             pages.keySet().forEach(action);
         }
 
-        public synchronized void forEachPageAndTime(Consumer<PageAndTime> action) {
-            if (action == null) return;
-            var values = pages.values();
-            values.forEach(action);
-        }
-
-        public PageId getLRUPage() {
-            //            System.out.println("LRU First page: " + times.firstKey());
-            //            System.out.println("LRU Last page: " + times.lastKey());
-            //            var enty = times.firstEntry();
-            //            if (enty == null) return null;
-            //            return enty.getValue();
-            return null;
-        }
-
         public synchronized PageId getNotDirtyLRUPage() throws DbException {
             boolean allDirty = false;
-            var values = pages.values();
-            for (PageAndTime pageAndTime : values)
+            PageNode currentNode=tail.prev;
+            while (currentNode!=head)
             {
-                PageId e = pageAndTime.id;
-                var value = pages.get(e);
-                if (value != null)
-                {
-                    if (value.page.isDirty() == null) return e;
+                var value = currentNode.page;
+                if (value != null){
+                    if (value.isDirty() == null){
+                      return currentNode.id;
+                    }else {
+                      currentNode=currentNode.prev;
+                    }
                 }
                 allDirty = true;
             }
@@ -448,15 +454,17 @@ public class BufferPool {
 
         }
 
-        private class PageAndTime {
-            Long time;
+        private class PageNode {
             Page page;
             PageId id;
+            PageNode prev,next;
 
-            public PageAndTime(Long time, Page page, PageId id) {
-                this.time = time;
-                this.page = page;
+            public PageNode(Page page, PageId id) {
                 this.id = id;
+                this.page = page;
+            }
+
+            public PageNode() {
             }
         }
     }
